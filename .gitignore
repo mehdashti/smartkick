@@ -1,0 +1,24 @@
+# Environment variables
+.env
+
+# Virtual environment
+venv/
+gfb_venv/  # نام محیط مجازی شما
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# VS Code settings (اختیاری، برخی دوست دارند به اشتراک بگذارند)
+.vscode/
+
+# Celery beat schedule file
+celerybeat-schedule
+
+# Build artifacts, logs, etc. (اگر دارید)
+*.log
+dist/
+build/
+*.egg-info/

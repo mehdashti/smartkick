@@ -1,0 +1,64 @@
+fastapi_football_app/
+├── venv/                     # پوشه محیط مجازی (توسط شما مدیریت نمی‌شود)
+│
+├── app/                      # پوشه اصلی کد برنامه FastAPI شما
+│   ├── __init__.py
+│   │
+│   ├── api_clients/          # ماژول برای ارتباط با API های خارجی (با httpx)
+│   │   ├── __init__.py
+│   │   └── api_football.py   # منطق async ارتباط با API-Football با httpx
+│   │
+│   ├── core/                 # تنظیمات اصلی و هسته برنامه
+│   │   ├── __init__.py
+│   │   ├── config.py         # خواندن تنظیمات (.env) با Pydantic-Settings
+│   │   └── database.py       # تنظیمات اتصال Async به دیتابیس (e.g., SQLAlchemy async, Motor)
+│   │
+│   ├── models/               # مدل های داده (Pydantic)
+│   │   ├── __init__.py
+│   │   ├── common.py         # مدل‌های مشترک یا پایه‌ای (مثلا برای分页)
+│   │   ├── player.py         # مدل‌های مربوط به بازیکن (Schema و شاید DB Model)
+│   │   ├── team.py           # مدل‌های مربوط به تیم
+│   │   └── game.py           # مدل‌های مربوط به بازی (شامل وضعیت زنده)
+│   │
+│   ├── repositories/         # لایه دسترسی به داده (Async CRUD Operations)
+│   │   ├── __init__.py
+│   │   ├── base_repository.py # (اختیاری) کلاس پایه برای CRUD عمومی
+│   │   ├── player_repository.py # عملیات Async DB برای بازیکنان
+│   │   ├── team_repository.py   # عملیات Async DB برای تیم‌ها
+│   │   └── game_repository.py   # عملیات Async DB برای بازی‌ها (شامل آپدیت/خواندن وضعیت زنده)
+│   │
+│   ├── routers/              # مدیریت اندپوینت ها (مسیرها) - Async Handlers
+│   │   ├── __init__.py
+│   │   ├── dependencies.py   # (اختیاری) تعریف وابستگی‌های مشترک (مثل گرفتن session دیتابیس)
+│   │   ├── players.py        # اندپوینت‌های Async مربوط به بازیکنان
+│   │   ├── teams.py          # اندپوینت‌های Async مربوط به تیم‌ها
+│   │   └── games.py          # اندپوینت‌های Async مربوط به بازی‌ها (خواندن وضعیت زنده از DB)
+│   │
+│   ├── services/             # لایه منطق تجاری (Business Logic) - Async Methods
+│   │   ├── __init__.py
+│   │   ├── player_service.py # منطق Async برای بازیکنان (شامل کشینگ یا تصمیم‌گیری)
+│   │   ├── team_service.py   # منطق Async برای تیم‌ها
+│   │   └── game_service.py   # منطق Async برای بازی‌ها (فقط خواندن از DB برای اندپوینت کاربر)
+│   │
+│   └── main.py               # نقطه ورود اصلی برنامه FastAPI (راه‌اندازی و اتصال روترها)
+│
+├── worker/                   # پوشه مربوط به Celery Worker
+│   ├── __init__.py
+│   ├── celery_app.py         # تعریف و پیکربندی نمونه Celery App (متصل به Broker)
+│   ├── tasks/                # ماژول‌های وظایف Celery
+│   │   ├── __init__.py
+│   │   └── ingestion.py      # وظایف Async دریافت داده (مثل گرفتن داده زنده بازی‌ها)
+│   └── celery_config.py      # (اختیاری) تنظیمات دقیق‌تر Celery جدا از core.config
+│
+├── tests/                    # پوشه تست‌ها (Unit, Integration)
+│   ├── __init__.py
+│   ├── conftest.py           # Fixtures برای تست (مثلا دیتابیس تست async)
+│   ├── test_routers/
+│   ├── test_services/
+│   └── test_repositories/
+│
+├── .env                      # فایل تنظیمات محیطی (DB URL Async, API Keys, Celery Broker/Backend URL)
+├── .gitignore                # فایل‌هایی که نباید در Git ثبت شوند (مثل .env, venv, __pycache__)
+├── requirements.txt          # لیست کتابخانه‌های لازم (fastapi, uvicorn, celery, redis/amqp, httpx, sqlalchemy[asyncio], asyncpg/aiomysql/motor, pydantic-settings, ...)
+├── README.md                 # توضیحات پروژه
+└── docker-compose.yml        # (اختیاری ولی بسیار مفید) برای راه‌اندازی سرویس‌ها (FastAPI, Worker, DB, Redis/RabbitMQ) با Docker
