@@ -62,3 +62,27 @@ fastapi_football_app/
 ├── requirements.txt          # لیست کتابخانه‌های لازم (fastapi, uvicorn, celery, redis/amqp, httpx, sqlalchemy[asyncio], asyncpg/aiomysql/motor, pydantic-settings, ...)
 ├── README.md                 # توضیحات پروژه
 └── docker-compose.yml        # (اختیاری ولی بسیار مفید) برای راه‌اندازی سرویس‌ها (FastAPI, Worker, DB, Redis/RabbitMQ) با Docker
+
+
+app/
+├── routers/
+│   ├── admin/                # <--- پوشه جدید برای روترهای ادمین
+│   │   ├── __init__.py
+│   │   ├── admin_base.py     # (اختیاری) تنظیمات پایه روتر ادمین (prefix, tags, security)
+│   │   ├── update_metadata.py  # اندپوینت های آپدیت متادیتا (مثل timezone)
+│   │   ├── update_teams.py     # اندپوینت های آپدیت تیم ها
+│   │   ├── update_players.py   # اندپوینت های آپدیت بازیکنان (اطلاعات پایه، تاریخچه تیم)
+│   │   └── update_fixtures.py  # مثال: اندپوینت های آپدیت بازی ها و نتایج زنده
+│   │   └── ...                 # سایر فایل ها برای منابع دیگر
+│   │
+│   ├── public/               # <--- (اختیاری) تغییر نام پوشه برای روترهای عمومی
+│   │   ├── __init__.py
+│   │   ├── metadata.py
+│   │   ├── players.py
+│   │   ├── teams.py
+│   │   └── ...
+│   │
+│   ├── dependencies.py     # وابستگی های مشترک (امنیت، دیتابیس)
+│   └── __init__.py         # (ممکن است برای import آسان تر لازم باشد)
+│
+└── main.py

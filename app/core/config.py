@@ -1,16 +1,40 @@
-# core/config.py
+# app/core/config.py
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field # برای امکانات بیشتر مثل alias یا validation (اختیاری)
+import logging # استفاده از لاگر به جای print
+
+logger = logging.getLogger(__name__)
 
 class Settings(BaseSettings):
-    # این متغیرها رو از فایل .env یا متغیرهای محیطی سیستم می‌خونه
+    # --- API Football Settings ---
     API_FOOTBALL_KEY: str
-    API_FOOTBALL_HOST: str = "v3.football.api-sports.io" # مقدار پیش‌فرض
+    API_FOOTBALL_HOST: str = "v3.football.api-sports.io"
 
-    # تنظیمات Pydantic برای خواندن از فایل .env
-    model_config = SettingsConfigDict(env_file='.env', extra='ignore')
+    # --- Database Settings ---
+    DATABASE_URL: str = Field(..., validation_alias='DATABASE_URL') # <--- اضافه شد
+    # `validation_alias` اطمینان می دهد که دقیقا دنبال DATABASE_URL در .env می گردد
+    # `...` یعنی این فیلد اجباری است و مقدار پیش فرض ندارد
 
-# یک نمونه از تنظیمات ساخته می‌شه که در کل برنامه قابل استفاده است
-settings = Settings()
+    # --- Celery Settings (Example) ---
+    # CELERY_BROKER_URL: str = Field(..., validation_alias='CELERY_BROKER_URL')
+    # CELERY_RESULT_BACKEND: str = Field(..., validation_alias='CELERY_RESULT_BACKEND') # اگر نیاز دارید
 
-# برای تست می‌تونی چاپش کنی (بعداً حذف کن)
-print(f"Loaded settings: API Key starts with {settings.API_FOOTBALL_KEY[:5]}..., Host: {settings.API_FOOTBALL_HOST}")
+    # --- Pydantic Settings Configuration ---
+    # خواندن از فایل .env و متغیرهای محیطی
+    model_config = SettingsConfigDict(
+        env_file='.env',         # نام فایل .env
+        env_file_encoding='utf-8', # انکودینگ فایل
+        extra='ignore'           # نادیده گرفتن متغیرهای اضافی در محیط
+    )
+
+# --- ایجاد نمونه تنظیمات ---
+# این بلوک try-except مهم است تا اگر متغیرهای لازم پیدا نشدند، خطای واضحی بدهد
+try:
+    settings = Settings()
+    # لاگ کردن تنظیمات بارگذاری شده (به جز اطلاعات حساس)
+    logger.info(f"Settings loaded successfully. DB URL set: {'Yes' if settings.DATABASE_URL else 'No'}")
+    # logger.debug(f"Loaded settings: API Key starts with {settings.API_FOOTBALL_KEY[:5]}..., Host: {settings.API_FOOTBALL_HOST}, DB URL: {settings.DATABASE_URL}") # DB URL را در debug لاگ کنید نه info
+except Exception as e:
+    logger.exception("CRITICAL ERROR: Failed to load settings from environment or .env file!")
+    # در صورت عدم بارگذاری تنظیمات، برنامه نباید ادامه دهد
+    raise SystemExit(f"Failed to load settings: {e}") from e

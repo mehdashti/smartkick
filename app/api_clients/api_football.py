@@ -1,129 +1,110 @@
-# api_clients/api_football.py
+# app/api_clients/api_football.py
 import httpx
-import requests
-from typing import List 
-from .errors import APIFootballError, InvalidAPIResponseError 
+from typing import List, Dict, Any, Optional
 from app.core.config import settings
+import logging 
+
+logger = logging.getLogger(__name__)
+
 
 BASE_URL = f"https://{settings.API_FOOTBALL_HOST}"
-
-# هدرها رو اینجا تعریف می‌کنیم چون مختص این API هستند
-headers = {
+HEADERS = {
     'x-rapidapi-host': settings.API_FOOTBALL_HOST,
     'x-rapidapi-key': settings.API_FOOTBALL_KEY
 }
+DEFAULT_TIMEOUT = 15.0
 
-class APIFootballError(Exception):
-    """خطای سفارشی برای مشکلات مربوط به API-Football."""
-    pass
+async def _make_api_request(
+    method: str,
+    endpoint: str,
+    params: Optional[Dict[str, Any]] = None,
+    expected_status: int = 200
+) -> Dict[str, Any]:
 
-class PlayerNotFoundError(APIFootballError):
-    """خطای سفارشی وقتی بازیکن پیدا نمی‌شود."""
-    pass
-
-
-async def fetch_player_teams(player_id: int):
-
-    player_endpoint = f"{BASE_URL}/players/teams?player={player_id}"
-    params = {
-        "id": player_id,
-
-    }
-
-    try:
-        response = requests.get(player_endpoint, headers=headers)
-        response.raise_for_status() # بررسی خطاهای HTTP (4xx, 5xx)
-
-        data = response.json()
-
-        if not data.get('response') or not data['response']:
-            raise PlayerNotFoundError(f"بازیکن با شناسه {player_id} پیدا نشد.")
-        return data['response'][0]
-
-    except requests.exceptions.HTTPError as e:
-        status_code = e.response.status_code
-        print(f"HTTP Error from API-Football: {status_code} - {e.response.text}")
-        raise APIFootballError(f"خطای HTTP {status_code} از API-Football دریافت شد.") from e
-
-    except requests.exceptions.RequestException as e:
-        print(f"خطای ارتباط با API-Football: {e}")
-        raise APIFootballError("خطا در برقراری ارتباط با سرویس API-Football.") from e
-
-    except Exception as e:
-        print(f"خطای پیش‌بینی نشده در api_football.py: {e}")
-        raise APIFootballError("یک خطای ناشناخته در پردازش پاسخ API-Football رخ داد.") from e
-
-
-async def fetch_teams_info(team_id: int):
-
-    team_endpoint = f"{BASE_URL}/teams?id={team_id}"
-    params = {
-        "id": team_id,
-
-    }
-
-    try:
-        response = requests.get(team_endpoint, headers=headers)
-        response.raise_for_status() # بررسی خطاهای HTTP (4xx, 5xx)
-
-        data = response.json()
-
-        if not data.get('response') or not data['response']:
-            raise PlayerNotFoundError(f"بازیکن با شناسه {team_id} پیدا نشد.")
-        return data['response'][0]
-
-    except requests.exceptions.HTTPError as e:
-        status_code = e.response.status_code
-        print(f"HTTP Error from API-Football: {status_code} - {e.response.text}")
-        raise APIFootballError(f"خطای HTTP {status_code} از API-Football دریافت شد.") from e
-
-    except requests.exceptions.RequestException as e:
-        print(f"خطای ارتباط با API-Football: {e}")
-        raise APIFootballError("خطا در برقراری ارتباط با سرویس API-Football.") from e
-
-    except Exception as e:
-        print(f"خطای پیش‌بینی نشده در api_football.py: {e}")
-        raise APIFootballError("یک خطای ناشناخته در پردازش پاسخ API-Football رخ داد.") from e
-
-
-async def fetch_timezones_from_api() -> list[str]:
-    timezone_endpoint = f"{BASE_URL}/timezone"
-    print(f"[API Client] Fetching timezones from: {timezone_endpoint}")
-
+    url = f"{BASE_URL}{endpoint}"
     async with httpx.AsyncClient() as client:
         try:
-            response = await client.get(timezone_endpoint, headers=headers) 
-            response.raise_for_status() 
+            response = await client.request(
+                method=method,
+                url=url,
+                headers=HEADERS,
+                params=params,
+                timeout=DEFAULT_TIMEOUT
+            )
 
-            data = response.json()
+   
+            if response.status_code != expected_status:
+                 raise ValueError(f"API Error: Unexpected status code {response.status_code} from {url}. Body: {response.text[:500]}")
 
-            response_list = data.get('response') 
+            try:
+                return response.json()
+            except ValueError as json_err:                 
+                 raise ValueError(f"API Error: Failed to decode JSON response from {url}. Text: {response.text[:500]}") from json_err
 
-            if isinstance(response_list, list):
-
-                return response_list # ---> برگرداندن لیست استخراج شده
-
-
-        except httpx.HTTPStatusError as e:
-            status_code = e.response.status_code
-            print(f"[API Client] HTTP Error fetching timezones: {status_code} - {e.response.text}")
-            # می توانید بر اساس status_code خطای خاص تری raise کنید
-            # if status_code == 401 or status_code == 403:
-            #     raise APIAuthenticationError(...)
-            # if status_code == 429:
-            #     raise APILimitExceededError(...)
-            raise APIFootballError(f"خطای HTTP {status_code} هنگام دریافت timezone ها.") from e
+        except httpx.TimeoutException as e:             
+             raise TimeoutError(f"API Error: Request to {url} timed out.") from e
         except httpx.RequestError as e:
-            print(f"[API Client] Request Error fetching timezones: {e}")
-            raise APIFootballError("خطا در برقراری ارتباط با سرویس API-Football برای دریافت timezone ها.") from e
-        except ValueError as e: # خطای JSONDecodeError از ValueError ارث بری می کند
-             print(f"[API Client] Error decoding JSON response: {e}")
-             raise InvalidAPIResponseError("پاسخ دریافت شده از API قابل تبدیل به JSON نبود.") from e
+             raise ConnectionError(f"API Error: Network error connecting to {url} ({type(e).__name__}).") from e
         except Exception as e:
-            print(f"[API Client] Unexpected error fetching timezones: {e}")
-            # بررسی کنید آیا این خطا از نوع APIFootballError است یا نه
-            if isinstance(e, APIFootballError):
-                raise # اگر خطای خودمان بود دوباره raise کن
-            else:
-                # در غیر این صورت به عنوان خطای عمومی APIFootballError گزارش کن
-                raise APIFootballError(f"یک خطای ناشناخته هنگام پردازش timezone ها رخ داد: {type(e).__name__} - {e}") from e
+             raise Exception(f"API Error: Unexpected error during request to {url}: {e}") from e
+
+
+async def fetch_player_teams(player_id: int) -> Dict[str, Any]:
+
+    endpoint = "/players/teams"
+    params = {"player": player_id}
+
+    data = await _make_api_request("GET", endpoint, params=params)
+
+    response_list = data.get('response')
+    if isinstance(response_list, list) and response_list:
+        return response_list[0] 
+    else:
+
+        raise LookupError(f"Player teams not found or invalid response for ID: {player_id}")
+
+async def fetch_teams_info(team_id: int) -> Dict[str, Any]:
+
+    endpoint = "/teams"
+    params = {"id": team_id}
+    data = await _make_api_request("GET", endpoint, params=params)
+
+    response_list = data.get('response')
+    if isinstance(response_list, list) and response_list:
+        return response_list[0]
+    else:
+        raise LookupError(f"Team info not found or invalid response for ID: {team_id}")
+
+async def fetch_timezones_from_api() -> List[str]:
+    endpoint = "/timezone"
+    data = await _make_api_request("GET", endpoint)
+
+    response_list = data.get('response')
+    if isinstance(response_list, list) and all(isinstance(item, str) for item in response_list):
+        return response_list
+    else:
+        raise ValueError(f"Invalid timezone response format: Expected list of strings.")
+    
+
+async def fetch_countries_from_api() -> List[Dict[str, Any]]:
+    endpoint = "/countries"
+    logger.info("Fetching countries from external API...")
+    try:
+        data = await _make_api_request("GET", endpoint) 
+
+        response_list = data.get('response')
+        if isinstance(response_list, list) and all(isinstance(item, dict) for item in response_list):
+             valid_countries = [
+                 country for country in response_list
+                 if isinstance(country.get("name"), str) and isinstance(country.get("code"), str) 
+             ]
+             logger.info(f"Successfully fetched {len(valid_countries)} valid countries from API.")
+             return valid_countries 
+        else:
+             logger.error(f"Invalid response structure for countries: {data}")
+
+             raise ValueError("Invalid countries response format: Expected list of dicts.")
+    except Exception as e:
+         logger.error(f"Failed to fetch countries from API: {e}", exc_info=True)
+
+         raise 

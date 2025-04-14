@@ -7,7 +7,7 @@ router = APIRouter(
     tags=["Players"]
 )
 
-@router.get("/{player_id}")
+@router.get("/{player_id}/teams", response_model=dict)
 async def get_player_info(player_id: int):
 
     try:

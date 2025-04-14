@@ -1,7 +1,7 @@
 # app/routers/metadata.py
 from fastapi import APIRouter, HTTPException, Depends
 from typing import List
-from app.services.metadata_service import MetadataService, get_metadata_service # سرویس و تابع Depends
+from app.services.metadata_service import MetadataService, update_timezones_from_api # سرویس و تابع Depends
 from app.api_clients.errors import APIFootballError # برای مدیریت خطای خاص
 
 router = APIRouter(

@@ -1,5 +1,6 @@
 # Environment variables
 .env
+project_structure.txt
 
 # Virtual environment
 venv/
