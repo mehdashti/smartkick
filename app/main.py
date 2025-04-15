@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager # <--- وارد کردن context mana
 from fastapi import FastAPI
 from app.routers import players, teams#, metadata # ... و سایر روترها
 from app.routers.admin import update_metadata as admin_metadata_router
+from app.routers.admin import update_leagues as admin_leagues_router 
 
 
 # --- تنظیمات لاگینگ (بدون تغییر) ---
@@ -56,7 +57,8 @@ app = FastAPI(
 
 
 # --- اتصال روترهای ادمین ---
-app.include_router(admin_metadata_router.router) # <--- ثبت روتر ادمین
+app.include_router(admin_metadata_router.router)
+app.include_router(admin_leagues_router.router)  # <--- ثبت روتر ادمین
 # ... (سایر روترهای ادمین که در آینده اضافه می شوند) ...
 
 # --- اتصال روترها (بدون تغییر) ---

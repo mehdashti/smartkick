@@ -12,7 +12,7 @@ from sqlalchemy import pool
 from alembic import context
 
 from app.core.database import Base
-import app.models.team
+import app.models.league
 import app.models.timezone
 import app.models.country
 

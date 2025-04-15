@@ -1,10 +1,10 @@
 # app/repositories/country_repository.py
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.dialects.postgresql import insert # برای Upsert پستگرس
 
-from app.models.country import Country 
+from app.models import Country, Timezone, League
 import logging
 
 logger = logging.getLogger(__name__)
@@ -21,6 +21,21 @@ class CountryRepository:
         countries = result.scalars().all()
         logger.debug(f"Retrieved {len(countries)} countries from DB.")
         return countries
+
+    async def get_country_by_code(self, code: str) -> Optional[Country]:
+        if not code: # از جستجو با کد خالی یا None جلوگیری کن
+            return None
+        logger.debug(f"Fetching country with code: {code}")
+        stmt = select(Country).where(Country.code == code)
+        result = await self.db.execute(stmt)
+        country = result.scalars().first()
+        if country:
+            logger.debug(f"Found country: {country.name} (ID: {country.country_id}) for code {code}")
+        else:
+            logger.warning(f"Country with code '{code}' not found in the database.")
+        return country
+
+
 
     async def bulk_upsert_countries(self, countries_data: List[Dict[str, Any]]) -> int:
         """
@@ -44,7 +59,7 @@ class CountryRepository:
             {
                 "name": country.get("name"),
                 "code": country.get("code"), # فرض می کنیم code همیشه هست
-                "flag": country.get("flag")
+                "flag_url": country.get("flag_url")
             }
             for country in countries_data if country.get("code") # فقط آنهایی که code دارند
         ]
@@ -59,7 +74,7 @@ class CountryRepository:
         # تعریف ستون هایی که در صورت تداخل آپدیت می شوند
         update_dict = {
             "name": insert_stmt.excluded.name,
-            "flag": insert_stmt.excluded.flag,
+            "flag_url": insert_stmt.excluded.flag_url,
             # کد را آپدیت نمی کنیم چون کلید تداخل است
         }
 
@@ -68,12 +83,17 @@ class CountryRepository:
             set_=update_dict # دیکشنری مقادیر برای آپدیت
         )
 
-        # اجرای دستور Upsert
-        async with self.db.begin(): # شروع تراکنش
-             result = await self.db.execute(upsert_stmt)
 
-        # result.rowcount ممکن است دقیق نباشد برای ON CONFLICT در برخی درایورها
-        # اما نشان دهنده اجرای موفقیت آمیز است
-        processed_count = result.rowcount if result.rowcount is not None else len(values_to_insert)
-        logger.info(f"Bulk upsert for countries finished. Processed approximately {processed_count} rows.")
-        return processed_count # یا len(values_to_insert)
+        try:
+            # اجرای مستقیم دستور روی session با تراکنش فعال
+            result = await self.db.execute(upsert_stmt)
+
+            # محاسبه تعداد (مانند قبل)
+            processed_count = result.rowcount if result.rowcount is not None else len(values_to_insert)
+            logger.info(f"Country bulk upsert execution finished for this batch. Approx rows affected/attempted: {processed_count}")
+            # Commit نهایی توسط وابستگی انجام می شود
+            return processed_count
+        except Exception as e:
+            # فقط لاگ و انتشار خطا، Rollback توسط وابستگی انجام می شود
+            logger.exception(f"Error during country bulk upsert execution: {e}")
+            raise e

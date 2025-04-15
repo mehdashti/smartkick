@@ -108,3 +108,26 @@ async def fetch_countries_from_api() -> List[Dict[str, Any]]:
          logger.error(f"Failed to fetch countries from API: {e}", exc_info=True)
 
          raise 
+    
+
+async def fetch_leagues_from_api() -> List[Dict[str, Any]]:
+    endpoint = "/leagues"
+    logger.info("Fetching leagues from external API...")
+    try:
+        data = await _make_api_request("GET", endpoint)
+      
+        response_list = data.get('response')
+        if isinstance(response_list, list) and all(
+            isinstance(item, dict) and
+            'league' in item and 'country' in item and 'seasons' in item
+            for item in response_list
+        ):
+            logger.info(f"Successfully fetched {len(response_list)} league entries from API.")
+            return response_list
+        else:
+            logger.error(f"Invalid response structure for leagues: {data}")
+            raise ValueError("Invalid leagues response format: Expected list of dicts with 'league', 'country', 'seasons'.")
+
+    except Exception as e:
+        logger.exception(f"Failed during fetching or initial processing of leagues from API: {e}")
+        raise

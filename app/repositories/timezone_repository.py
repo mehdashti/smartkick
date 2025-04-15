@@ -4,7 +4,10 @@ from sqlalchemy import delete # دستور delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select # روش جدیدتر select (اگر از sqlalchemy 1.4+ استفاده می کنید)
 
-from app.models.timezone import Timezone # مدل Timezone
+from app.models import Country, Timezone, League
+import logging
+
+logger = logging.getLogger(__name__)
 
 class TimezoneRepository:
     def __init__(self, db_session: AsyncSession):
@@ -20,22 +23,34 @@ class TimezoneRepository:
         تمام timezone های موجود را حذف کرده و موارد جدید را درج می کند.
         تعداد timezone های درج شده را برمی گرداند.
         """
-        # استفاده از begin برای اطمینان از اتمی بودن عملیات (اختیاری ولی خوب)
-        async with self.db.begin():
+        # --- حذف `async with self.db.begin()` ---
+        try:
             # 1. حذف تمام رکوردهای موجود
             delete_stmt = delete(Timezone)
             await self.db.execute(delete_stmt)
+            logger.debug("Executed delete statement for existing timezones.")
 
             # 2. ایجاد اشیاء مدل Timezone جدید
-            # استفاده از set برای حذف موارد تکراری احتمالی از لیست ورودی
             unique_names = set(timezone_names)
             timezone_objects = [Timezone(name=name) for name in unique_names]
+            logger.debug(f"Prepared {len(timezone_objects)} unique timezone objects for insertion.")
+
 
             # 3. اضافه کردن اشیاء جدید به session
             self.db.add_all(timezone_objects)
+            logger.debug("Added new timezone objects to the session.")
 
-            # نیازی به commit صریح نیست چون از db.begin() استفاده کردیم
-            # flush برای اطمینان از ارسال دستورات قبل از پایان (اختیاری)
-            await self.db.flush()
+            # flush اختیاری است، اگر نیاز فوری به ID های جدید ندارید
+            # await self.db.flush()
+            # logger.debug("Flushed session changes.")
 
-        return len(timezone_objects) # تعداد موارد درج شده
+            # Commit نهایی توسط وابستگی انجام می شود
+            prepared_count = len(timezone_objects)
+            logger.info(f"Successfully prepared {prepared_count} timezones for replacement.")
+            return prepared_count # تعداد آماده شده برای درج
+
+        except Exception as e:
+            # فقط لاگ و انتشار خطا، Rollback توسط وابستگی انجام می شود
+            logger.exception(f"Error during replace all timezones execution: {e}")
+            raise e
+        # --- پایان حذف ---

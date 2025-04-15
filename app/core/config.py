@@ -14,10 +14,12 @@ class Settings(BaseSettings):
     DATABASE_URL: str = Field(..., validation_alias='DATABASE_URL') # <--- اضافه شد
     # `validation_alias` اطمینان می دهد که دقیقا دنبال DATABASE_URL در .env می گردد
     # `...` یعنی این فیلد اجباری است و مقدار پیش فرض ندارد
-
+    DEFAULT_DB_BATCH_SIZE: int = 500
+    SQL_ECHO: bool = True # برای لاگ کردن SQL ها (اختیاری)
     # --- Celery Settings (Example) ---
     # CELERY_BROKER_URL: str = Field(..., validation_alias='CELERY_BROKER_URL')
     # CELERY_RESULT_BACKEND: str = Field(..., validation_alias='CELERY_RESULT_BACKEND') # اگر نیاز دارید
+    
 
     # --- Pydantic Settings Configuration ---
     # خواندن از فایل .env و متغیرهای محیطی
