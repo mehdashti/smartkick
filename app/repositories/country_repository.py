@@ -1,9 +1,8 @@
 # app/repositories/country_repository.py
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Sequence
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
-from sqlalchemy.dialects.postgresql import insert # برای Upsert پستگرس
-
+from sqlalchemy.dialects.postgresql import insert 
 from app.models import Country, Timezone, League
 import logging
 
@@ -13,13 +12,12 @@ class CountryRepository:
     def __init__(self, db_session: AsyncSession):
         self.db: AsyncSession = db_session
 
-    async def get_all_countries(self) -> List[Country]:
-        """تمام کشورهای ذخیره شده را بر اساس نام برمی گرداند."""
-        logger.debug("Fetching all countries from DB.")
-        stmt = select(Country).order_by(Country.name)
-        result = await self.db.execute(stmt)
+    async def get_all_countries(self, skip: int = 0, limit: int = 1000) -> Sequence[Country]: # Limit بالا برای گرفتن همه
+        logger.debug(f"Querying for all countries: skip={skip}, limit={limit}")
+        query = select(Country).offset(skip).limit(limit).order_by(Country.name)
+        result = await self.db.execute(query)
         countries = result.scalars().all()
-        logger.debug(f"Retrieved {len(countries)} countries from DB.")
+        logger.info(f"Retrieved {len(countries)} countries from DB.")
         return countries
 
     async def get_country_by_code(self, code: str) -> Optional[Country]:
@@ -35,7 +33,21 @@ class CountryRepository:
             logger.warning(f"Country with code '{code}' not found in the database.")
         return country
 
-
+    async def get_country_by_name(self, name: str) -> Optional[Country]:
+        """
+        کشور را بر اساس نام آن پیدا می‌کند (بدون حساسیت به بزرگی و کوچکی حروف).
+        """
+        logger.debug(f"Querying DB for country with name: {name}")
+        # استفاده از ilike برای جستجوی بدون حساسیت به حروف در PostgreSQL
+        # یا استفاده از func.lower برای سازگاری بیشتر
+        stmt = select(Country).filter(func.lower(Country.name) == func.lower(name))
+        result = await self.db.execute(stmt)
+        country = result.scalars().first()
+        if country:
+            logger.debug(f"Country found by name '{name}': ID {country.country_id}")
+        else:
+            logger.warning(f"Country with name '{name}' not found in DB.")
+        return country
 
     async def bulk_upsert_countries(self, countries_data: List[Dict[str, Any]]) -> int:
         """

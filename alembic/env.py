@@ -15,6 +15,8 @@ from app.core.database import Base
 import app.models.league
 import app.models.timezone
 import app.models.country
+import app.models.team
+import app.models.venue
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

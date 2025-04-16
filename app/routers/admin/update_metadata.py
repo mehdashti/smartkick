@@ -2,9 +2,9 @@
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from pydantic import BaseModel # <--- برای Response Model
+from pydantic import BaseModel 
 import logging
-import httpx # <--- برای گرفتن خطاهای شبکه/API
+import httpx 
 
 # وارد کردن وابستگی‌ها و سرویس‌های لازم
 from app.core.database import get_async_db_session

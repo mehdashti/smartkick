@@ -11,32 +11,26 @@ class Settings(BaseSettings):
     API_FOOTBALL_HOST: str = "v3.football.api-sports.io"
 
     # --- Database Settings ---
-    DATABASE_URL: str = Field(..., validation_alias='DATABASE_URL') # <--- اضافه شد
-    # `validation_alias` اطمینان می دهد که دقیقا دنبال DATABASE_URL در .env می گردد
-    # `...` یعنی این فیلد اجباری است و مقدار پیش فرض ندارد
+    DATABASE_URL: str = Field(..., validation_alias='DATABASE_URL') 
     DEFAULT_DB_BATCH_SIZE: int = 500
-    SQL_ECHO: bool = True # برای لاگ کردن SQL ها (اختیاری)
-    # --- Celery Settings (Example) ---
-    # CELERY_BROKER_URL: str = Field(..., validation_alias='CELERY_BROKER_URL')
-    # CELERY_RESULT_BACKEND: str = Field(..., validation_alias='CELERY_RESULT_BACKEND') # اگر نیاز دارید
-    
+    SQL_ECHO: bool = False # در پروداکشن False باشد بهتر است
 
-    # --- Pydantic Settings Configuration ---
-    # خواندن از فایل .env و متغیرهای محیطی
+    # ----- Security Settings -----
+    JWT_SECRET_KEY: str = Field(..., validation_alias='JWT_SECRET_KEY') # اطمینان از خواندن از env
+    JWT_ALGORITHM: str = Field(default="HS256", validation_alias='JWT_ALGORITHM')
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=30, validation_alias='ACCESS_TOKEN_EXPIRE_MINUTES')
+    # -----------------------------
+
     model_config = SettingsConfigDict(
-        env_file='.env',         # نام فایل .env
-        env_file_encoding='utf-8', # انکودینگ فایل
-        extra='ignore'           # نادیده گرفتن متغیرهای اضافی در محیط
+        env_file='.env',
+        env_file_encoding='utf-8',
+        extra='ignore'
     )
 
-# --- ایجاد نمونه تنظیمات ---
-# این بلوک try-except مهم است تا اگر متغیرهای لازم پیدا نشدند، خطای واضحی بدهد
+
 try:
     settings = Settings()
-    # لاگ کردن تنظیمات بارگذاری شده (به جز اطلاعات حساس)
-    logger.info(f"Settings loaded successfully. DB URL set: {'Yes' if settings.DATABASE_URL else 'No'}")
-    # logger.debug(f"Loaded settings: API Key starts with {settings.API_FOOTBALL_KEY[:5]}..., Host: {settings.API_FOOTBALL_HOST}, DB URL: {settings.DATABASE_URL}") # DB URL را در debug لاگ کنید نه info
+    logger.info(f"Settings loaded successfully. DB URL set: {'Yes' if settings.DATABASE_URL else 'No'}. JWT Algo: {settings.JWT_ALGORITHM}")
 except Exception as e:
     logger.exception("CRITICAL ERROR: Failed to load settings from environment or .env file!")
-    # در صورت عدم بارگذاری تنظیمات، برنامه نباید ادامه دهد
     raise SystemExit(f"Failed to load settings: {e}") from e

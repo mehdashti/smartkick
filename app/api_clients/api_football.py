@@ -131,3 +131,33 @@ async def fetch_leagues_from_api() -> List[Dict[str, Any]]:
     except Exception as e:
         logger.exception(f"Failed during fetching or initial processing of leagues from API: {e}")
         raise
+
+async def fetch_teams_by_country(country_name: str) -> List[Dict[str, Any]]:
+    endpoint = "/teams"
+    params = {"country": country_name}
+    logger.info(f"Fetching teams from external API for country: {country_name}")
+    try:
+        data = await _make_api_request("GET", endpoint, params=params)
+
+        response_list = data.get('response')
+        if isinstance(response_list, list):
+             valid_entries = [
+                 entry for entry in response_list
+                 if isinstance(entry, dict) and 'team' in entry and 'venue' in entry
+                 and isinstance(entry.get('team'), dict) and entry['team'].get('id') is not None
+             ]
+             if len(valid_entries) != len(response_list):
+                  logger.warning(f"Found {len(response_list) - len(valid_entries)} invalid team entries in API response for {country_name}.")
+
+             logger.info(f"Successfully fetched {len(valid_entries)} valid team entries from API for country: {country_name}")
+             return valid_entries
+        else:
+             logger.error(f"Invalid response structure for teams (country: {country_name}): Expected list under 'response'. Response: {data}")
+             return [] 
+
+    except (ValueError, ConnectionError, TimeoutError, LookupError) as api_error:
+        logger.error(f"API Error fetching teams for country {country_name}: {api_error}", exc_info=True)
+        raise api_error
+    except Exception as e:
+        logger.exception(f"Unexpected error fetching teams for country {country_name}: {e}")
+        raise ConnectionError(f"Unexpected error connecting to API for teams: {e}") from e
