@@ -1,65 +1,79 @@
 # app/schemas/team.py
-from pydantic import BaseModel, Field, ConfigDict, HttpUrl
-from typing import Optional
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl
+from typing import Optional, List, Dict, Any, TYPE_CHECKING
 from datetime import datetime
+from pydantic.alias_generators import to_camel
 
-# --- وارد کردن اسکیماهای وابسته ---
-# فرض می‌کنیم این فایل‌ها از قبل وجود دارند و CountryOut و VenueOut را تعریف می‌کنند
-from .country import CountryOut
-from .venue import VenueOut
+if TYPE_CHECKING:
+    from app.schemas.country import CountryOut
+    from app.schemas.league import LeagueOut
+    from app.schemas.venue import VenueOut
 
-# --- Base Schema ---
-class TeamBase(BaseModel):
-    """Base schema for team data."""
-    name: str = Field(..., max_length=100, description="Team name")
-    code: Optional[str] = Field(None, max_length=10, description="Team code (e.g., 3-letter code)")
-    founded: Optional[int] = Field(None, gt=1800, lt=2100, description="Year the team was founded")
-    is_national: bool = Field(..., description="True if it's a national team")
-    logo_url: Optional(HttpUrl | str) = Field(None, description="URL of the team logo")
+class APIModel(BaseModel):
+    """Base model with common config for all schemas"""
+    model_config = ConfigDict(
+        from_attributes=True,
+        populate_by_name=True,
+        alias_generator=to_camel,
+        extra="ignore"
+    )
 
-# --- Schema for Creation (from API data) ---
-class TeamCreate(TeamBase):
-    """Schema used when creating a team."""
-    external_id: int = Field(..., description="Team ID from the external API (API-Football)")
-    country_id: int = Field(..., description="Internal ID of the associated country")
-    # venue_id هنگام ایجاد از API ممکن است هنوز وجود نداشته باشد یا نیاز به ایجاد داشته باشد،
-    # پس در سرویس مقداردهی می‌شود و اینجا نمی‌گذاریم یا Optional است
-    venue_external_id: Optional[int] = Field(None, description="External ID of the venue (used by service to find/create venue)")
+class TeamBase(APIModel):
+    """Base schema for team data"""
+    name: str = Field(..., max_length=100, description="Full team name")
+    code: Optional[str] = Field(None, max_length=10, description="Short team code (3 letters)")
+    founded: Optional[int] = Field(None, gt=1800, lt=2100, description="Year of foundation")
+    is_national: bool = Field(..., description="Whether it's a national team")
+    logo_url: Optional[HttpUrl | str] = Field(None, description="URL of team logo")
 
-# --- Schema for Update ---
-class TeamUpdate(BaseModel):
-    """Schema for updating an existing team. All fields are optional."""
+class TeamAPIInputData(APIModel):
+    """Validates the structure of team data directly from the API"""
+    team: Dict[str, Any] = Field(..., description="Raw team data from API")
+    venue: Optional[Dict[str, Any]] = Field(None, description="Venue data from API")
+
+class TeamCreateInternal(APIModel):
+    """Schema used internally for creating teams"""
+    team_id: int = Field(..., description="External API team ID")
+    name: str = Field(..., max_length=100)
+    code: Optional[str] = Field(None, max_length=10)
+    founded: Optional[int] = Field(None, gt=1800, lt=2100)
+    is_national: bool = Field(...)
+    logo_url: Optional[HttpUrl | str] = Field(None)
+    country: Optional[str] = Field(None, max_length=255, description="Country name")
+    venue_id: Optional[int] = Field(None, description="Internal venue ID")
+
+class TeamUpdate(APIModel):
+    """Schema for updating team data"""
     name: Optional[str] = Field(None, max_length=100)
     code: Optional[str] = Field(None, max_length=10)
     founded: Optional[int] = Field(None, gt=1800, lt=2100)
     is_national: Optional[bool] = None
-    logo_url: Optional(HttpUrl | str) = None
-    # آپدیت country_id یا venue_id معمولاً از طریق سرویس‌های خاص انجام می‌شود
-    venue_id: Optional[int] = Field(None, description="Update the internal venue ID association")
+    logo_url: Optional[HttpUrl | str] = None
+    country: Optional[str] = Field(None, max_length=255)
+    venue_id: Optional[int] = None
 
-
-# --- Schema for Output ---
 class TeamOut(TeamBase):
-    """Schema for representing team data in API responses."""
-    team_id: int = Field(..., description="Internal unique ID for the team")
-    external_id: int = Field(..., description="Team ID from the external API")
-    created_at: datetime = Field(..., description="Timestamp when the team was created")
-    updated_at: datetime = Field(..., description="Timestamp when the team was last updated")
+    """Output schema for team data"""
+    team_id: int = Field(..., description="Internal team ID")
+    country: Optional[str] = Field(None, max_length=255, description="Country name")
+    venue_id: Optional[int] = Field(None, description="Associated venue ID")
+    created_at: datetime
+    updated_at: datetime
+    
+    # Relationships
+    country_details: Optional["CountryOut"] = Field(None, description="Country details", alias="country")
+    venue: Optional["VenueOut"] = Field(None, description="Venue details")
+    leagues: Optional[List["LeagueOut"]] = Field(None, description="Leagues team participates in")
 
-    # --- نمایش داده‌های مرتبط ---
-    # از اسکیمای Out مربوطه استفاده می‌کنیم
-    country: Optional[CountryOut] = Field(None, description="Associated country data")
-    venue: Optional[VenueOut] = Field(None, description="Associated venue data")
-
-    # Pydantic V2: ConfigDict replaces Config class
-    model_config = ConfigDict(from_attributes=True) # Enable ORM mode
-
-# (اختیاری) اسکیمای خلاصه برای لیست‌ها
-class TeamSummaryOut(BaseModel):
+class TeamSummaryOut(APIModel):
+    """Compact team representation for lists"""
     team_id: int
-    external_id: int
     name: str
-    logo_url: Optional(HttpUrl | str) = None
-    country_name: Optional[str] = Field(None, validation_alias="country.name") # گرفتن نام کشور از رابطه
+    logo_url: Optional[HttpUrl | str] = None
+    country: Optional[str] = Field(None, max_length=255, description="Country name")
+    country_code: Optional[str] = None
 
-    model_config = ConfigDict(from_attributes=True)
+class TeamListResponse(APIModel):
+    """Paginated list of teams"""
+    count: int = Field(..., description="Total number of teams")
+    items: List[TeamOut] = Field(..., description="List of team records")

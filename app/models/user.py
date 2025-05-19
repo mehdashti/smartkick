@@ -1,32 +1,83 @@
 # app/models/user.py
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, func, Index, JSON
-from sqlalchemy.orm import relationship # اگر نیاز به روابط دارید
+from datetime import datetime
+from typing import Optional, Dict, Any, List, TYPE_CHECKING
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import Integer, String, Boolean, DateTime, JSON, func
 from app.core.database import Base
 
 class User(Base):
     __tablename__ = "users"
 
-    user_id = Column(Integer, primary_key=True, index=True)
-    username = Column(String(100), unique=True, index=True, nullable=False, comment="Unique username for login")
-    email = Column(String(255), unique=True, index=True, nullable=False, comment="Unique email address")
-    hashed_password = Column(String(255), nullable=False, comment="Hashed password")
-    full_name = Column(String(150), nullable=True, comment="User's full name")
-    avatar_url = Column(String(255), nullable=True, comment="URL to user's profile picture")
-    role = Column(String(50), default="user", nullable=False, index=True, comment="User role (e.g., 'user', 'admin', 'moderator')")
-    is_active = Column(Boolean, default=True, nullable=False, index=True, comment="Designates whether this user account is active")
-    is_verified = Column(Boolean, default=False, nullable=False, comment="Designates whether the user has verified their email")
-    preferences = Column(JSON, nullable=True, comment="User-specific settings or preferences (e.g., favorite teams)")
-    last_login_at = Column(DateTime(timezone=True), nullable=True, comment="Timestamp of the last successful login")
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    username: Mapped[str] = mapped_column(
+        String(100),
+        unique=True,
+        index=True,
+        nullable=False,
+        comment="Unique username for login"
+    )
+    email: Mapped[str] = mapped_column(
+        String(255),
+        unique=True,
+        index=True,
+        nullable=False,
+        comment="User's email address"
+    )
+    hashed_password: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        comment="Bcrypt hashed password"
+    )
+    full_name: Mapped[Optional[str]] = mapped_column(
+        String(150),
+        nullable=True,
+        comment="User's full name"
+    )
+    avatar_url: Mapped[Optional[str]] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="URL to user's avatar image"
+    )
+    role: Mapped[str] = mapped_column(
+        String(50),
+        default="user",
+        nullable=False,
+        index=True,
+        comment="User role (user|moderator|admin)"
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+        index=True,
+        comment="Account active status"
+    )
+    is_verified: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        comment="Email verification status"
+    )
+    preferences: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        JSON,
+        nullable=True,
+        comment="User preferences JSON"
+    )
+    last_login_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Last login timestamp"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now()
+    )
 
-    # --- ایندکس‌های اضافی (اختیاری ولی مفید) ---
-    # Index('ix_users_email', 'email', unique=True) # در تعریف ستون هم unique=True گذاشتیم
-    # Index('ix_users_username', 'username', unique=True)
 
-    # --- روابط (اگر نیاز دارید) ---
-    # مثلاً اگر کاربر بتواند تیم های مورد علاقه داشته باشد
-    # favorite_teams = relationship("Team", secondary="user_favorite_teams", back_populates="favorited_by_users")
-
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<User(user_id={self.user_id}, username='{self.username}', role='{self.role}')>"

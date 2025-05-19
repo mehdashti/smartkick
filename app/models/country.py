@@ -1,31 +1,40 @@
 # app/models/countries.py
-from sqlalchemy import Column, Integer, String, DateTime
-from sqlalchemy.orm import relationship, declared_attr
+from datetime import datetime
+from typing import Optional, List, TYPE_CHECKING
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import String, Integer, DateTime, ForeignKey
 from sqlalchemy.sql import func
 from app.core.database import Base
 
+if TYPE_CHECKING:
+    from app.models.team import Team
+    from app.models.league import League
+    from app.models.venue import Venue  
 
 class Country(Base):
     __tablename__ = 'countries'
+
+    country_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True, index=True)
+    code: Mapped[Optional[str]] = mapped_column(String(10), index=True)
+    flag_url: Mapped[Optional[str]] = mapped_column(String(255))
     
-    country_id = Column(Integer, primary_key=True)
-    name = Column(String(100), nullable=False, index=True)
-    code = Column(String(10), nullable=False, unique=True)
-    flag_url = Column(String(255))
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now()
+    )
 
-    # --- رابطه یک-به-چند با تیم‌ها با استفاده از declared_attr ---
-    @declared_attr
-    def teams(cls):
-        # back_populates باید با نام رابطه در مدل Team مطابقت داشته باشد
-        return relationship("Team", back_populates="country", lazy="selectin", cascade="all, delete-orphan") # cascade اختیاری
+    # روابط
+    leagues: Mapped[List["League"]] = relationship(
+        back_populates="country",
+        lazy="noload",
+        foreign_keys="[League.country_id]"
+    )
 
-    # --- رابطه یک-به-چند با لیگ‌ها (که از قبل داشتید) ---
-    @declared_attr
-    def leagues(cls):
-        return relationship("League", back_populates="country", lazy="selectin", cascade="all, delete-orphan") # cascade اختیاری
-
-
-    def __repr__(self):
-         return f"<Country(country_id={self.country_id}, name='{self.name}', code='{self.code}')>"
+    def __repr__(self) -> str:
+        return f"<Country(country_id={self.country_id}, name='{self.name}', code='{self.code}')>"

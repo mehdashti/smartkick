@@ -1,25 +1,55 @@
 # app/schemas/timezone.py
-
-from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
-from typing import Optional
+from datetime import datetime
+from typing import Optional, List
+from pydantic.alias_generators import to_camel
 
-class TimezoneBase(BaseModel):
-    """Base schema for Timezone"""
-    name: str = Field(..., max_length=100, description="Unique name of the timezone (e.g., Europe/Istanbul)")
+class APIModel(BaseModel):
+    """Base model with common config for all schemas"""
+    model_config = ConfigDict(
+        from_attributes=True,
+        populate_by_name=True,
+        alias_generator=to_camel,
+        extra="ignore"
+    )
 
-class TimezoneCreate(TimezoneBase):
-    """Schema for creating a new timezone"""
-    pass
+class TimezoneBase(APIModel):
+    """Base schema for timezone data"""
+    name: str = Field(
+        ...,
+        max_length=100,
+        description="IANA timezone name (e.g., 'Europe/Istanbul')",
+        pattern=r"^[A-Za-z_]+\/[A-Za-z_]+$",
+        example="America/New_York"
+    )
 
-class TimezoneUpdate(BaseModel):
-    """Schema for updating an existing timezone"""
-    name: Optional[str] = Field(None, max_length=100, description="New name of the timezone")
+class TimezoneAPIInputData(APIModel):
+    """Validates timezone data from external API"""
+    timezone: str = Field(..., description="Timezone name from API")
+
+class TimezoneCreateInternal(APIModel):
+    """Schema for internal timezone creation"""
+    name: str = Field(..., max_length=100, description="IANA timezone name")
+    offset: Optional[int] = Field(None, description="UTC offset in minutes")
+
+class TimezoneUpdate(APIModel):
+    """Schema for updating timezone data"""
+    name: Optional[str] = Field(
+        None,
+        max_length=100,
+        description="New IANA timezone name",
+        pattern=r"^[A-Za-z_]+\/[A-Za-z_]+$"
+    )
+    offset: Optional[int] = Field(None, description="New UTC offset in minutes")
 
 class TimezoneOut(TimezoneBase):
-    """Schema for returning timezone data"""
-    id: int = Field(..., description="Primary ID of the timezone")
-    created_at: datetime = Field(..., description="Timestamp when the record was created")
-    updated_at: datetime = Field(..., description="Timestamp when the record was last updated")
+    """Output schema for timezone data"""
+    id: int = Field(..., description="Internal timezone ID")
+    offset: Optional[int] = Field(None, description="UTC offset in minutes")
+    created_at: datetime = Field(..., description="Creation timestamp")
+    updated_at: datetime = Field(..., description="Last update timestamp")
 
-    model_config = ConfigDict(from_attributes=True)
+class TimezoneListResponse(APIModel):
+    """Paginated list of timezones"""
+    count: int = Field(..., description="Total number of timezones")
+    items: List[TimezoneOut] = Field(..., description="List of timezone records")

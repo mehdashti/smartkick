@@ -1,10 +1,12 @@
 # app/repositories/country_repository.py
-from typing import List, Dict, Any, Optional, Sequence
-from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.dialects.postgresql import insert 
-from app.models import Country, Timezone, League
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy import select
+from typing import List, Dict, Any, Optional, Tuple
+from sqlalchemy.sql import func
 import logging
+
+from app.models import Country as DBcountry
 
 logger = logging.getLogger(__name__)
 
@@ -12,35 +14,46 @@ class CountryRepository:
     def __init__(self, db_session: AsyncSession):
         self.db: AsyncSession = db_session
 
-    async def get_all_countries(self, skip: int = 0, limit: int = 1000) -> Sequence[Country]: # Limit بالا برای گرفتن همه
-        logger.debug(f"Querying for all countries: skip={skip}, limit={limit}")
-        query = select(Country).offset(skip).limit(limit).order_by(Country.name)
-        result = await self.db.execute(query)
-        countries = result.scalars().all()
-        logger.info(f"Retrieved {len(countries)} countries from DB.")
-        return countries
+    async def get_all_countries(self):
+        result = await self.db.execute(select(DBcountry))
+        return result.scalars().all()
 
-    async def get_country_by_code(self, code: str) -> Optional[Country]:
-        if not code: # از جستجو با کد خالی یا None جلوگیری کن
-            return None
-        logger.debug(f"Fetching country with code: {code}")
-        stmt = select(Country).where(Country.code == code)
-        result = await self.db.execute(stmt)
-        country = result.scalars().first()
-        if country:
-            logger.debug(f"Found country: {country.name} (ID: {country.country_id}) for code {code}")
-        else:
-            logger.warning(f"Country with code '{code}' not found in the database.")
-        return country
+    async def bulk_upsert_countries(self, countries_data: List[Dict[str, Any]]) -> int:
 
-    async def get_country_by_name(self, name: str) -> Optional[Country]:
+        if not countries_data:
+            logger.warning("Received empty list for country bulk upsert.")
+            return 0
+
+        logger.info(f"Attempting to bulk upsert {len(countries_data)} countries.")
+
+        insert_stmt = pg_insert(DBcountry).values(countries_data)
+
+        upsert_stmt = insert_stmt.on_conflict_do_update(
+            index_elements=['name'],
+            set_={
+                col.name: getattr(insert_stmt.excluded, col.name)
+                for col in DBcountry.__table__.columns
+                if col.name not in ['country_id', 'created_at']
+            }
+        )
+
+        try:
+            result = await self.db.execute(upsert_stmt)
+            logger.info(f"country bulk upsert statement executed for {len(countries_data)} items. Affected rows: {result.rowcount}")
+            return result.rowcount if result.rowcount is not None else len(countries_data)
+        except Exception as e:
+            logger.exception(f"Error during country bulk upsert: {e}")
+            raise
+
+
+    async def get_country_by_name(self, name: str) -> Optional[DBcountry]:
         """
         کشور را بر اساس نام آن پیدا می‌کند (بدون حساسیت به بزرگی و کوچکی حروف).
         """
         logger.debug(f"Querying DB for country with name: {name}")
         # استفاده از ilike برای جستجوی بدون حساسیت به حروف در PostgreSQL
         # یا استفاده از func.lower برای سازگاری بیشتر
-        stmt = select(Country).filter(func.lower(Country.name) == func.lower(name))
+        stmt = select(DBcountry).filter(func.lower(DBcountry.name) == func.lower(name))
         result = await self.db.execute(stmt)
         country = result.scalars().first()
         if country:
@@ -49,63 +62,3 @@ class CountryRepository:
             logger.warning(f"Country with name '{name}' not found in DB.")
         return country
 
-    async def bulk_upsert_countries(self, countries_data: List[Dict[str, Any]]) -> int:
-        """
-        کشورها را به صورت دسته ای درج یا آپدیت (Upsert) می کند.
-        فرض می کند 'code' کلید منحصر به فرد برای تشخیص تداخل است و NULL نیست.
-
-        Args:
-            countries_data: لیستی از دیکشنری ها، هر کدام شامل 'name', 'code', 'flag'.
-
-        Returns:
-            تعداد رکوردهایی که درج یا آپدیت شدند (تقریبی).
-        """
-        if not countries_data:
-            logger.warning("Received empty list for country upsert.")
-            return 0
-
-        logger.info(f"Attempting to bulk upsert {len(countries_data)} countries.")
-
-        # آماده سازی مقادیر برای تابع insert
-        values_to_insert = [
-            {
-                "name": country.get("name"),
-                "code": country.get("code"), # فرض می کنیم code همیشه هست
-                "flag_url": country.get("flag_url")
-            }
-            for country in countries_data if country.get("code") # فقط آنهایی که code دارند
-        ]
-
-        if not values_to_insert:
-             logger.warning("No valid country data with non-null 'code' found to upsert.")
-             return 0
-
-        # ساخت دستور INSERT ... ON CONFLICT DO UPDATE
-        insert_stmt = insert(Country).values(values_to_insert)
-
-        # تعریف ستون هایی که در صورت تداخل آپدیت می شوند
-        update_dict = {
-            "name": insert_stmt.excluded.name,
-            "flag_url": insert_stmt.excluded.flag_url,
-            # کد را آپدیت نمی کنیم چون کلید تداخل است
-        }
-
-        upsert_stmt = insert_stmt.on_conflict_do_update(
-            index_elements=['code'], # ستون یا قید یکتا برای تشخیص تداخل
-            set_=update_dict # دیکشنری مقادیر برای آپدیت
-        )
-
-
-        try:
-            # اجرای مستقیم دستور روی session با تراکنش فعال
-            result = await self.db.execute(upsert_stmt)
-
-            # محاسبه تعداد (مانند قبل)
-            processed_count = result.rowcount if result.rowcount is not None else len(values_to_insert)
-            logger.info(f"Country bulk upsert execution finished for this batch. Approx rows affected/attempted: {processed_count}")
-            # Commit نهایی توسط وابستگی انجام می شود
-            return processed_count
-        except Exception as e:
-            # فقط لاگ و انتشار خطا، Rollback توسط وابستگی انجام می شود
-            logger.exception(f"Error during country bulk upsert execution: {e}")
-            raise e

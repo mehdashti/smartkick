@@ -4,6 +4,8 @@
 API_BASE_URL="http://localhost:8001" # پورت را تنظیم کنید
 ADMIN_USERNAME="admin" # نام کاربری ادمین
 ADMIN_PASSWORD="Derakht@2519" # رمز عبور ادمین
+LEAGUE_ID=61 # شناسه لیگ
+SEASON=2022 # فصل
 
 # --- مرحله ۱: گرفتن توکن ---
 echo "Requesting access token..."
@@ -19,10 +21,39 @@ if [ -z "$ACCESS_TOKEN" ] || [ "$ACCESS_TOKEN" = "null" ]; then
 fi
 echo "Access Token obtained."
 
-# --- مرحله ۲: صدا زدن اندپوینت ادمین ---
-echo "Calling /admin/leagues/update-leagues..."
-curl -X POST "$API_BASE_URL/admin/teams/update-by-country/allcountries" \
-   -H "Authorization: Bearer $ACCESS_TOKEN"
+# --- مرحله ۲: ارسال تسک به Celery ---
+echo "Sending task to Celery..."
+TASK_RESPONSE=$(curl -s -X POST "$API_BASE_URL/admin/leagues/update-leagues" \
+   -H "Authorization: Bearer $ACCESS_TOKEN" \
+   -H "Content-Type: application/json")
 
-echo # Newline for clarity
+# استخراج Task ID
+TASK_ID=$(echo "$TASK_RESPONSE" | jq -r .task_id)
+
+if [ -z "$TASK_ID" ] || [ "$TASK_ID" = "null" ]; then
+  echo "Error: Failed to send task to Celery. Response: $TASK_RESPONSE"
+  exit 1
+fi
+echo "Task sent to Celery. Task ID: $TASK_ID"
+
+# --- مرحله ۳: بررسی وضعیت تسک ---
+echo "Checking task status..."
+while true; do
+  TASK_STATUS=$(curl -s -X GET "$API_BASE_URL/admin/tasks/$TASK_ID" \
+     -H "Authorization: Bearer $ACCESS_TOKEN" | jq -r .status)
+
+  echo "Task Status: $TASK_STATUS"
+
+  if [ "$TASK_STATUS" = "SUCCESS" ]; then
+    echo "Task completed successfully."
+    break
+  elif [ "$TASK_STATUS" = "FAILURE" ]; then
+    echo "Task failed. Check Celery logs for details."
+    break
+  else
+    echo "Task is still running. Checking again in 1 seconds..."
+    sleep 1
+  fi
+done
+
 echo "Script finished."

@@ -40,6 +40,13 @@ fastapi_football_app/
 │   │   ├── team_service.py   # منطق Async برای تیم‌ها
 │   │   └── game_service.py   # منطق Async برای بازی‌ها (فقط خواندن از DB برای اندپوینت کاربر)
 │   │
+│   ├── schemas/               # مدل های داده (Pydantic)
+│   │   ├── __init__.py
+│   │   ├── common.py        
+│   │   ├── player.py         
+│   │   ├── team.py           
+│   │   └── game.py 
+│   │
 │   └── main.py               # نقطه ورود اصلی برنامه FastAPI (راه‌اندازی و اتصال روترها)
 │
 ├── worker/                   # پوشه مربوط به Celery Worker

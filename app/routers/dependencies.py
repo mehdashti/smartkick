@@ -2,18 +2,20 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Annotated
+from typing import AsyncGenerator, Annotated
 import logging
 
 from app.core.database import get_async_db_session
+#from app.core.database import async_session_factory 
 from app.core.config import settings # برای دریافت تنظیمات اگر لازم باشد
-from app.core.security import decode_access_token
+from app.core.security import decode_access_token, get_current_active_user  # اصلاح ایمپورت
 # --- استفاده از اسکیما و مدل جدید ---
 from app.schemas.token import TokenData # برای payload دیکود شده
 from app.models import User as DBUser # مدل SQLAlchemy
 from app.schemas.user import UserPublic # اسکیمای Pydantic برای خروجی
 # --- استفاده از سرویس کاربر ---
 from app.services.user_service import UserService
+from app.models.user import User  # فرض بر این است که مدل User وجود دارد
 
 logger = logging.getLogger(__name__)
 
@@ -80,13 +82,15 @@ async def get_current_active_user(
 async def require_admin_user(
     current_user: Annotated[DBUser, Depends(get_current_active_user)],
 ) -> DBUser:
-    # Check if user has the 'admin' role
-    if current_user.role != "admin":
-         logger.warning(f"Access denied for user '{current_user.username}': Admin role required, but user has role '{current_user.role}'.")
-         raise HTTPException(
-             status_code=status.HTTP_403_FORBIDDEN,
-             detail="Administrator privileges required",
-         )
+    """
+    بررسی می‌کند که آیا کاربر فعلی ادمین است یا خیر.
+    """
+    if current_user.role != "admin":  # بررسی نقش کاربر
+        logger.warning(f"Access denied for user '{current_user.username}': Admin role required, but user has role '{current_user.role}'.")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Administrator privileges required",
+        )
     logger.debug(f"Admin access granted for user: {current_user.username}")
     return current_user
 
@@ -103,3 +107,27 @@ async def get_current_active_user_public(
     return UserPublic.model_validate(current_user)
 
 CurrentUserPublic = Annotated[UserPublic, Depends(get_current_active_user_public)]
+
+async def get_raw_db_session() -> AsyncGenerator[AsyncSession, None]:
+    """فقط session را می‌دهد، مدیریت تراکنش با فراخوان است."""
+    async with get_async_db_session() as session:
+         yield session
+         # اینجا commit یا rollback نداریم
+
+# Type hint برای session خام
+RawDBSession = Annotated[AsyncSession, Depends(get_raw_db_session)]
+
+# Type hint قبلی (اگر هنوز جایی لازم است)
+async def get_managed_db_session() -> AsyncGenerator[AsyncSession, None]:
+     """Session با مدیریت تراکنش خودکار (برای اندپوینت های ساده)."""
+     async with get_async_db_session() as session:
+         try:
+             yield session
+             await session.commit()
+         except Exception:
+             await session.rollback()
+             raise
+         finally:
+             await session.close() # شاید لازم نباشد با async with
+
+DBSessionManaged = Annotated[AsyncSession, Depends(get_managed_db_session)]

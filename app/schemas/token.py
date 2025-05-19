@@ -1,28 +1,61 @@
 # app/schemas/token.py
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import List, Optional
+from datetime import datetime
+from pydantic.alias_generators import to_camel
+from enum import Enum
 
-class Token(BaseModel):
-    """Schema for the login response, containing the access token."""
-    access_token: str = Field(..., description="JWT Access Token")
-    token_type: str = Field(default="bearer", description="Type of the token")
+class APIModel(BaseModel):
+    """Base model with common config for all schemas"""
+    model_config = ConfigDict(
+        from_attributes=True,
+        populate_by_name=True,
+        #alias_generator=to_camel,
+        extra="ignore"
+    )
 
-class TokenPayload(BaseModel):
-    """
-    Schema representing the data encoded within the JWT payload (standard claims).
-    You might add custom claims like 'role' here if needed during creation,
-    but often role is checked against the DB after decoding 'sub'.
-    """
-    sub: Optional[str] = Field(None, description="Subject of the token (usually username or user ID)")
-    exp: Optional[int] = Field(None, description="Expiration time (Unix timestamp)")
-    iat: Optional[int] = Field(None, description="Issued at time (Unix timestamp)")
-    # --- Custom Claims (Add if you encode them directly) ---
+class TokenType(str, Enum):
+    """Enum for token types"""
+    BEARER = "bearer"
+    REFRESH = "refresh"
+
+class Token(APIModel):
+    """Schema for authentication token response"""
+    access_token: str = Field(..., description="JWT access token")
+    refresh_token: Optional[str] = Field(None, description="Refresh token")
+    token_type: TokenType = Field(default=TokenType.BEARER, description="Token type")
+    expires_in: Optional[int] = Field(None, description="Expiration time in seconds")
+
+class TokenPayload(APIModel):
+    """Schema representing JWT payload claims"""
+    sub: str = Field(..., description="Subject identifier (user ID)")
+    exp: int = Field(..., description="Expiration timestamp")
+    iat: int = Field(..., description="Issued at timestamp")
+    jti: Optional[str] = Field(None, description="Token unique identifier")
     role: Optional[str] = Field(None, description="User role")
-    # scopes: List[str] = [] # Example for fine-grained permissions
+    scopes: List[str] = Field(default_factory=list, description="Token permissions")
 
-# --- TokenData (for internal use after decoding) ---
-class TokenData(BaseModel):
-    """Schema for holding data extracted *after* decoding and verifying the token."""
-    username: Optional[str] = None
-    role: Optional[str] = None
-    scopes: List[str] = []
+class TokenData(APIModel):
+    """Schema for internal token data after verification"""
+    user_id: str = Field(..., description="Authenticated user ID")
+    username: Optional[str] = Field(None, description="Username")
+    role: Optional[str] = Field(None, description="User role")
+    scopes: List[str] = Field(default_factory=list, description="Authorized permissions")
+    expires_at: Optional[datetime] = Field(None, description="Token expiration datetime")
+
+class RefreshTokenRequest(APIModel):
+    """Schema for refresh token request"""
+    refresh_token: str = Field(..., description="Valid refresh token")
+
+class TokenRevocationRequest(APIModel):
+    """Schema for token revocation request"""
+    token: str = Field(..., description="Token to revoke")
+    token_type_hint: Optional[str] = Field(None, description="Type of token to revoke")
+
+class TokenValidationResponse(APIModel):
+    """Schema for token validation response"""
+    is_valid: bool = Field(..., description="Token validity status")
+    is_expired: bool = Field(..., description="Token expiration status")
+    user_id: Optional[str] = Field(None, description="Authenticated user ID")
+    scopes: List[str] = Field(default_factory=list, description="Token permissions")
+    expires_at: Optional[datetime] = Field(None, description="Expiration datetime")

@@ -3,25 +3,26 @@ import logging
 import sys
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+import app.schemas
 
 # --- روترهای ادمین ---
 from app.routers.admin import update_metadata as admin_metadata_router
 from app.routers.admin import update_leagues as admin_leagues_router
-from app.routers.admin import update_teams as admin_teams_router 
-# ... سایر روترهای ادمین ...
-
-# --- روترهای عمومی ---
-from app.routers import players, teams #, metadata
-# ... سایر روترهای عمومی ...
+from app.routers.admin import update_teams as admin_teams_router
+from app.routers.admin import update_venues as admin_venues_router
+from app.routers.admin import update_players as admin_players_router
+from app.routers.admin import update_player_stats as admin_player_stats_router
+from app.routers.admin import update_fixtures as update_fixtures_router
+from app.routers.admin import task_status as task_status_router
 
 # --- روتر احراز هویت ---
 from app.routers import auth # <--- وارد کردن روتر auth
 
-# --- تنظیمات لاگینگ (بدون تغییر) ---
-# ... (کد لاگینگ شما) ...
+# --- تنظیمات لاگینگ ---
+# ... (کد لاگینگ شما بدون تغییر) ...
 logger = logging.getLogger(__name__)
 
-# --- Lifespan (بدون تغییر) ---
+# --- Lifespan (اصلاح شده برای Redis) --- # <--- اینجا تغییر می‌کند
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Application startup via lifespan.")
@@ -30,29 +31,31 @@ async def lifespan(app: FastAPI):
 
 # --- ساخت برنامه FastAPI ---
 app = FastAPI(
-    title="SmartKick Football API", # <--- نام پروژه شما
+    title="SmartKick Football API",
     description="API for fetching and serving football data.",
     version="0.1.0",
-    lifespan=lifespan
+    lifespan=lifespan # <--- lifespan اصلاح شده به FastAPI داده می‌شود
 )
 
 # --- اتصال روترها ---
 
-# 1. روتر احراز هویت (معمولاً اولین روتر برای وضوح)
+# 1. روتر احراز هویت
 app.include_router(auth.auth_router)
 
-# 2. روترهای ادمین (که وابستگی امنیتی دارند)
-# (اگر یک admin_base دارید که بقیه را include می‌کند، فقط آن را ثبت کنید)
-# app.include_router(admin_base.admin_router)
-# در غیر این صورت، هر کدام را جداگانه ثبت کنید:
-app.include_router(admin_metadata_router.router) # فرض وجود وابستگی امنیتی در این روتر
-app.include_router(admin_leagues_router.router) # این روتر حالا وابستگی امنیتی دارد
+# 2. روترهای ادمین
+app.include_router(admin_metadata_router.router)
+app.include_router(admin_leagues_router.router)
 app.include_router(admin_teams_router.router)
+app.include_router(admin_venues_router.router)
+app.include_router(admin_players_router.router)
+app.include_router(admin_player_stats_router.router)
+app.include_router(task_status_router.router)
+app.include_router(update_fixtures_router.router)
 
-# 3. روترهای عمومی
-app.include_router(players.router, prefix="/public", tags=["Players"]) # مثال با prefix
-app.include_router(teams.router, prefix="/public", tags=["Teams"])
-# app.include_router(metadata.router, prefix="/public", tags=["Metadata"])
+
+# 4. روترهای عمومی (اگر دارید)
+# app.include_router(players.router, prefix="/public", tags=["Players"])
+# app.include_router(teams.router, prefix="/public", tags=["Teams"])
 
 # --- اندپوینت ریشه ---
 @app.get("/", tags=["Root"])
@@ -61,6 +64,4 @@ async def read_root():
     return {"message": "Welcome to the SmartKick API!"}
 
 # --- (اختیاری) CORS ---
-# from fastapi.middleware.cors import CORSMiddleware
-# origins = ["http://localhost:3000"] # آدرس فرانت‌اند شما
-# app.add_middleware(...)
+# ... (اگر نیاز دارید)

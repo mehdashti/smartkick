@@ -6,11 +6,16 @@ from app.core.database import Base # یا from .base import Base
 # ایمپورت تمام مدل های تعریف شده شما
 from .timezone import Timezone
 from .country import Country
-from .league import League   # <--- ایمپورت مدل League
+from .league import League   
 from .token import Token
 from .user import User
 from .venue import Venue
-from .team import Team     # <--- مثال: سایر مدل ها
+from .player import Player
+from .player_season_stats import PlayerSeasonStats
+from .team import Team 
+from .match import Match
+
+    # <--- مثال: سایر مدل ها
 #from .player import Player   # <--- مثال: سایر مدل ها
 # ... و غیره برای تمام مدل های دیگر
 

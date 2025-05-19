@@ -1,38 +1,68 @@
 # app/models/team.py
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime, func, UniqueConstraint, Index
-from sqlalchemy.orm import relationship, declared_attr  
+from datetime import datetime
+from typing import Optional, List, TYPE_CHECKING
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import Integer, String, Boolean, ForeignKey, DateTime, func
 from app.core.database import Base
+
+if TYPE_CHECKING:
+    from app.models.country import Country
+    from app.models.venue import Venue
+    from app.models.player_season_stats import PlayerSeasonStats  
+    from app.models.match import Match
 
 class Team(Base):
     __tablename__ = "teams"
 
-    team_id = Column(Integer, primary_key=True, index=True)
-    external_id = Column(Integer, unique=True, nullable=False, index=True, comment="Team ID from API-Football")
-    name = Column(String(100), nullable=False, index=True, comment="Team name")
-    code = Column(String(10), nullable=True, comment="Team code (e.g., 3-letter code)")
-    # سال تاسیس می تواند عدد صحیح باشد
-    founded = Column(Integer, nullable=True, comment="Year the team was founded")
-    is_national = Column(Boolean, default=False, nullable=False, index=True, comment="True if it's a national team")
-    logo_url = Column(String(255), nullable=True, comment="URL of the team logo")
+    team_id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False, index=True, comment="Team name")
+    code: Mapped[Optional[str]] = mapped_column(String(10), nullable=True, comment="Team code")
+    founded: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, comment="Foundation year")
+    is_national: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
+    logo_url: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, comment="Logo URL")
+    country: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    
 
-    # --- کلیدهای خارجی ---
-    country_id = Column(Integer, ForeignKey('countries.country_id'), nullable=False, index=True)
-    venue_id = Column(Integer, ForeignKey('venues.venue_id'), nullable=True, index=True) # ورزشگاه می‌تواند Null باشد
+    # Foreign Keys
+    venue_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey('venues.venue_id'),
+        nullable=True,
+        index=True
+    )
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now()
+    )
 
-    # --- رابطه چند-به-یک با کشور با استفاده از declared_attr ---
-    @declared_attr
-    def country(cls):
-        # back_populates باید با نام رابطه در مدل Country مطابقت داشته باشد
-        return relationship("Country", back_populates="teams", lazy="selectin")
+    # Relationships
+    venue: Mapped[Optional["Venue"]] = relationship(
+        back_populates="teams",
+        lazy="noload",
+        foreign_keys=[venue_id]
+    )
+    player_season_stats: Mapped[List["PlayerSeasonStats"]] = relationship(
+        back_populates="team",
+        lazy="noload",
+        cascade="all, delete-orphan",
+        foreign_keys="[PlayerSeasonStats.team_id]"
+    )
+    home_matches: Mapped[List["Match"]] = relationship(
+        back_populates="home_team",
+        lazy="noload",
+        foreign_keys="[Match.home_team_id]"
+    )
+    away_matches: Mapped[List["Match"]] = relationship(
+        back_populates="away_team",
+        lazy="noload",
+        foreign_keys="[Match.away_team_id]"
+    )
 
-    # --- رابطه چند-به-یک با ورزشگاه با استفاده از declared_attr ---
-    @declared_attr
-    def venue(cls):
-        # back_populates باید با نام رابطه در مدل Venue مطابقت داشته باشد
-        return relationship("Venue", back_populates="teams", lazy="selectin")
-
-    def __repr__(self):
-        return f"<Team(team_id={self.team_id}, name='{self.name}', external_id={self.external_id})>"
+    def __repr__(self) -> str:
+        return f"<Team(team_id={self.team_id}, name='{self.name}', country='{self.country}')>"

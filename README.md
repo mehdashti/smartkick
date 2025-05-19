@@ -2,148 +2,191 @@
 
 A FastAPI-based backend application designed to fetch, process, store, and serve football (soccer) data, primarily using the [API-Football](https://www.api-football.com/) external API.
 
-## Description
+---
 
-This project provides a RESTful API interface to access football data such as player information, team details, game fixtures, live game events (potentially via background tasks), and supported timezones. It leverages asynchronous programming with FastAPI and `httpx` for efficient handling of I/O operations, especially when dealing with external API calls and database interactions. It also potentially utilizes Celery for background task processing, like periodically fetching live game data.
+## Architecture Overview 🏗️
 
-## Features ✨
+The project follows a layered architecture to ensure modularity, scalability, and maintainability. Below is a summary of the key layers and their responsibilities:
 
-*   **FastAPI Backend:** Modern, fast (high-performance) web framework for building APIs.
-*   **Asynchronous:** Built with `async` and `await` for non-blocking I/O.
-*   **API-Football Integration:** Fetches data from the v3 API-Football service.
-*   **Endpoints:**
-    *   `/players/{player_id}`: Get details for a specific player.
-    *   `/teams/{team_id}`: Get details for a specific team.
-    *   `/games/{game_id}`: Get details for a specific game (potentially including live data).
-    *   `/meta/timezones`: Get a list of supported timezones from API-Football.
-    *   *(Potentially more endpoints for leagues, fixtures, live scores, etc.)*
-*   **Background Tasks (Celery):** For scheduled or long-running tasks like fetching live game data periodically without blocking API responses.
-*   **Database Integration:** (Assumed) Stores fetched data for caching and serving frequently requested information efficiently (e.g., using SQLAlchemy async, Motor for MongoDB).
-*   **Configuration Management:** Uses `.env` files and Pydantic settings for managing configuration and secrets.
-*   **Automatic API Docs:** Interactive API documentation available via Swagger UI (`/docs`) and ReDoc (`/redoc`).
+### 1. **Router Layer**
+- **Purpose:** Handles HTTP requests and responses.
+- **Responsibilities:**
+  - Defines API endpoints using FastAPI.
+  - Validates user input and returns appropriate responses.
+  - Delegates business logic to the service layer or queues tasks for Celery.
+- **Example:**
+  - Endpoint `/admin/venues/update-by-country` queues a Celery task to update venue data for a specific country.
+
+---
+
+### 2. **Task Layer**
+- **Purpose:** Manages long-running or background tasks using Celery.
+- **Responsibilities:**
+  - Executes operations that are time-consuming or need to run asynchronously.
+  - Uses `asyncio.run` to execute asynchronous methods in synchronous Celery tasks.
+  - Handles errors and returns task results.
+- **Example:**
+  - Task `update_venues_by_country_task` fetches venue data for a country and updates the database.
+
+---
+
+### 3. **Service Layer**
+- **Purpose:** Implements business logic.
+- **Responsibilities:**
+  - Processes data and applies business rules.
+  - Interacts with the repository layer to perform database operations.
+- **Example:**
+  - A service method fetches venue data from an external API, processes it, and calls the repository to update the database.
+
+---
+
+### 4. **Repository Layer**
+- **Purpose:** Handles direct interactions with the database.
+- **Responsibilities:**
+  - Executes CRUD operations using SQLAlchemy.
+  - Uses `AsyncSession` for asynchronous database interactions.
+  - Delegates transaction management to the caller (e.g., service or task layer).
+- **Example:**
+  - The `VenueRepository` class provides methods like `upsert_venue` and `bulk_upsert_venues` for efficient database updates.
+
+---
+
+### 5. **Database Layer**
+- **Purpose:** Manages database connections and sessions.
+- **Responsibilities:**
+  - Configures the database engine and session maker.
+  - Provides `AsyncSession` instances for use in other layers.
+  - Implements FastAPI dependencies like `get_async_db_session`.
+- **Example:**
+  - The `async_session` method creates and returns an `AsyncSession`.
+
+---
+
+## Data Flow 🔄
+
+1. **User Request:**
+   - A user sends an HTTP request to a FastAPI endpoint.
+   - The router validates the request and either calls a service method or queues a Celery task.
+
+2. **Task Execution:**
+   - Celery executes the task, which interacts with the service and repository layers to perform the required operations.
+
+3. **Database Interaction:**
+   - The repository layer executes database queries using `AsyncSession`.
+   - Transaction management (e.g., `commit` or `rollback`) is handled by the service or task layer.
+
+4. **Response:**
+   - The result of the operation is returned to the user or stored in Redis for later retrieval.
+
+---
+
+## Key Features ✨
+
+- **FastAPI Backend:** High-performance web framework for building APIs.
+- **Asynchronous Programming:** Uses `async` and `await` for non-blocking I/O operations.
+- **Celery Integration:** Handles background tasks like data fetching and processing.
+- **Database Support:** Uses SQLAlchemy with PostgreSQL for relational data storage.
+- **Interactive API Docs:** Automatically generated Swagger UI and ReDoc documentation.
+- **Environment Configuration:** Manages settings using `.env` files and Pydantic.
+
+---
 
 ## Tech Stack 🛠️
 
-*   **Backend:** FastAPI, Uvicorn
-*   **HTTP Client:** HTTPX (for async requests)
-*   **Data Validation:** Pydantic
-*   **Task Queue:** Celery (with a broker like Redis or RabbitMQ)
-*   **Database:** (Specify your database, e.g., PostgreSQL with SQLAlchemy async, MongoDB with Motor)
-*   **Configuration:** Pydantic-Settings
-*   **Language:** Python 3.10+
+- **Backend Framework:** FastAPI
+- **Task Queue:** Celery (with Redis as the broker and backend)
+- **Database:** PostgreSQL (via SQLAlchemy async)
+- **HTTP Client:** HTTPX
+- **Configuration Management:** Pydantic
+- **Language:** Python 3.10+
+
+---
 
 ## Getting Started 🚀
 
-Follow these instructions to set up the project locally or on your server.
-
 ### Prerequisites
 
-*   Python 3.10 or higher
-*   Pip package manager
-*   Git
-*   A message broker installed and running (e.g., Redis or RabbitMQ) if using Celery.
-*   A database system installed and running (e.g., PostgreSQL, MongoDB).
-*   An API Key from [API-Football](https://www.api-football.com/).
+- Python 3.10 or higher
+- Redis (for Celery)
+- PostgreSQL (or another supported database)
+- API Key from [API-Football](https://www.api-football.com/)
 
-### Installation & Setup
+### Installation
 
-1.  **Clone the repository:**
+1. **Clone the repository:**
     ```bash
     git clone https://github.com/mehdashti/smartkick.git
     cd smartkick
     ```
 
-2.  **Create and activate a virtual environment:**
+2. **Create and activate a virtual environment:**
     ```bash
     python3 -m venv venv
-    # On Linux/macOS
-    source venv/bin/activate
-    # On Windows
-    # .\venv\Scripts\activate
+    source venv/bin/activate  # On Linux/macOS
+    # .\venv\Scripts\activate  # On Windows
     ```
 
-3.  **Install dependencies:**
+3. **Install dependencies:**
     ```bash
     pip install -r requirements.txt
     ```
 
-4.  **Configure Environment Variables:**
-    *   Create a `.env` file in the project root directory.
-    *   Copy the contents of `.env.example` (if you create one) or add the required variables manually.
-    *   **Example `.env` content:**
-        ```dotenv
-        # API-Football Credentials
-        API_FOOTBALL_KEY="YOUR_API_FOOTBALL_KEY_HERE"
-        API_FOOTBALL_HOST="v3.football.api-sports.io"
+4. **Configure environment variables:**
+    - Create a `.env` file in the project root.
+    - Add the required variables (e.g., `DATABASE_URL`, `CELERY_BROKER_URL`, `API_FOOTBALL_KEY`).
 
-        # Database URL (Adjust based on your DB)
-        # Example for async PostgreSQL:
-        DATABASE_URL="postgresql+asyncpg://user:password@host:port/dbname"
-        # Example for MongoDB:
-        # DATABASE_URL="mongodb://user:password@host:port/"
+5. **Run database migrations (if applicable):**
+    ```bash
+    alembic upgrade head
+    ```
 
-        # Celery Broker URL (Adjust based on your broker)
-        # Example for Redis:
-        CELERY_BROKER_URL="redis://localhost:6379/0"
-        # Example for RabbitMQ:
-        # CELERY_BROKER_URL="amqp://guest:guest@localhost:5672//"
+---
 
-        # (Add any other necessary environment variables)
-        ```
-    *   **Important:** Replace placeholders with your actual credentials and settings. **Never commit your `.env` file to Git!** Ensure it's listed in your `.gitignore` file.
+## Running the Application
 
-5.  **Database Setup:**
-    *   Ensure your database server is running.
-    *   If using a relational database with migrations (e.g., Alembic with SQLAlchemy), run the migrations:
-        ```bash
-        # Example command (adjust if needed)
-        # alembic upgrade head
-        ```
-    *   *(Add specific instructions here if needed for database creation or seeding)*
-
-### Running the Application
-
-1.  **Run the FastAPI server:**
+1. **Start the FastAPI server:**
     ```bash
     uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     ```
-    *   `--reload` is useful for development as it automatically restarts the server on code changes.
-    *   The API will be accessible at `http://localhost:8000` (or your server's IP).
 
-2.  **Run the Celery worker (if using background tasks):**
-    Open a **new terminal window**, activate the virtual environment, and run:
+2. **Start the Celery worker:**
     ```bash
-    celery -A worker.celery_app worker --loglevel=info
+    celery -A app.core.celery_app worker --loglevel=info
     ```
 
-3.  **Run Celery Beat (if using scheduled tasks):**
-    Open **another new terminal window**, activate the virtual environment, and run:
+3. **Start Celery Beat (if using scheduled tasks):**
     ```bash
-    celery -A worker.celery_app beat --loglevel=info
+    celery -A app.core.celery_app beat --loglevel=info
     ```
+
+---
 
 ## API Documentation 📚
 
-Once the FastAPI server is running, you can access the interactive API documentation:
+- **Swagger UI:** [http://localhost:8000/docs](http://localhost:8000/docs)
+- **ReDoc:** [http://localhost:8000/redoc](http://localhost:8000/redoc)
 
-*   **Swagger UI:** [http://localhost:8000/docs](http://localhost:8000/docs)
-*   **ReDoc:** [http://localhost:8000/redoc](http://localhost:8000/redoc)
+---
 
 ## Environment Variables ⚙️
 
-The following environment variables are required (typically set in the `.env` file):
+- `API_FOOTBALL_KEY`: API key for API-Football.
+- `DATABASE_URL`: Connection string for the database.
+- `CELERY_BROKER_URL`: Connection string for the Celery broker.
+- *(Add other variables as needed.)*
 
-*   `API_FOOTBALL_KEY`: Your secret API key for API-Football.
-*   `API_FOOTBALL_HOST`: The host for the API-Football service (usually `v3.football.api-sports.io`).
-*   `DATABASE_URL`: The connection string for your database.
-*   `CELERY_BROKER_URL`: The connection string for your Celery message broker.
-*   *(List any other custom environment variables)*
+---
 
 ## Running Tests ✅
 
-*(Assuming you will use pytest)*
-
 To run the test suite:
-
 ```bash
 pytest
+```
+
+---
+
+## Notes 📝
+
+- This project uses a hybrid architecture combining synchronous Celery tasks with asynchronous FastAPI endpoints and database interactions.
+- For fully asynchronous Celery tasks, additional configuration and testing are required.

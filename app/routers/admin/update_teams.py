@@ -3,120 +3,116 @@ from fastapi import APIRouter, Depends, HTTPException, status, Path
 from pydantic import BaseModel
 import logging
 from typing import List
+import httpx
 
 # وابستگی‌ها و سرویس‌ها
-from app.routers.dependencies import require_admin_user, DBSession, AdminUser
+from app.routers.dependencies import require_admin_user, get_async_db_session, AdminUser
 from app.services.team_service import TeamService
-
-# مدل پاسخ را کمی تغییر می‌دهیم تا لیست خطاها را هم شامل شود
-class UpdateAllResponse(BaseModel):
-    message: str
-    total_count: int
-    failed_countries: List[str] = []
-
-# مدل پاسخ قبلی برای تک کشور
-class UpdateSingleResponse(BaseModel):
-    message: str
-    count: int
-
+from app.schemas.team import TeamOut
+from app.tasks.team_tasks import update_teams_by_league_season_task, update_team_by_id_task, update_teams_by_country_task
+from app.schemas.tasks import TaskQueueResponse
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/admin/teams",
     tags=["Admin - Teams"],
-    dependencies=[Depends(require_admin_user)] # اعمال امنیت در سطح روتر
+    dependencies=[Depends(require_admin_user)]
 )
-
-# --- استفاده از Union در response_model برای مشخص کردن پاسخ‌های ممکن ---
-# from typing import Union # اگر بخواهید response_model را دقیق‌تر کنید
 
 @router.post(
     "/update-by-country/{country_name}",
-    status_code=status.HTTP_200_OK,
-    summary="Fetch and Update Teams & Venues by Country or All Countries",
-    description=(
-        "Retrieves the latest list of teams and venues from API-Football "
-        "and upserts them into the local database. \n\n"
-        "Use a specific country name (e.g., 'Iran', 'England') or use "
-        "'allcountries' (case-insensitive) to update for all countries in the DB. "
-        "Requires Admin privileges."
-    ),
-    response_description="Confirmation message and the approximate number of entries processed. If 'allcountries' is used, also returns a list of countries where updates failed.",
-    # response_model=Union[UpdateSingleResponse, UpdateAllResponse] # <--- مشخص کردن نوع پاسخ های ممکن
-    # یا به صورت ساده تر فعلا از UpdateAllResponse برای هر دو استفاده کنیم و count را 0 بگذاریم اگر تک بود
-    response_model=UpdateAllResponse # <--- موقتا از این برای سادگی استفاده می‌کنیم
+    response_model=TaskQueueResponse, 
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Queue Background Task to Update Teams by Country",
 )
-
-async def trigger_team_update_by_country(
-    *, # باعث می‌شود پارامترهای بعدی فقط با نام قابل ارسال باشند
-    db: DBSession,
-    admin_user: AdminUser, # گرفتن کاربر ادمین برای لاگینگ (اختیاری)
-    country_name: str = Path(..., title="Country Name", description="The name of the country to fetch teams for (e.g., 'Iran', 'England')")
-) -> UpdateAllResponse: 
-    
-    """
-    Endpoint to manually trigger the update of team and venue data.
-    Can process a single country or all countries using 'allcountries'.
-    """
-    team_service = TeamService()
-    # مقایسه بدون حساسیت به بزرگی و کوچکی حروف
-    process_all = country_name.lower() == "allcountries"
-
-    if process_all:
-        logger.info(f"Admin request received from '{admin_user.username}': Trigger team/venue update for ALL countries.")
-        target_description = "all countries"
-    else:
-        logger.info(f"Admin request received from '{admin_user.username}': Trigger team/venue update for country '{country_name}'.")
-        target_description = f"country '{country_name}'"
-
+async def queue_teams_update_by_country(
+    *,
+    admin_user: AdminUser,
+    country_name: str = Path(..., title="Country Name", description="The name of the country (e.g., 'Japan')"),
+) -> TaskQueueResponse:
+    """Queues a background task to update teams for a specific country."""
+    logger.info(f"Admin request from '{admin_user.username}': Queue teams update task for country '{country_name}'.")
     try:
-        if process_all:
-            # --- فراخوانی متد برای همه کشورها ---
-            total_count, failed_list = await team_service.update_teams_for_all_countries(db=db)
-            msg = f"Team/Venue update process for ALL countries finished."
-            if failed_list:
-                msg += f" Updates failed for: {', '.join(failed_list)}."
-            return UpdateAllResponse(message=msg, total_count=total_count, failed_countries=failed_list)
-        else:
-            # --- فراخوانی متد برای تک کشور ---
-            processed_count = await team_service.update_teams_by_country(db=db, country_name=country_name)
-            logger.info(f"Team/Venue update process completed via admin endpoint for {target_description}. Count: {processed_count}")
-            # با فرمت UpdateAllResponse برمی‌گردانیم
-            return UpdateAllResponse(
-                message=f"Team/Venue update process for {target_description} finished successfully.",
-                total_count=processed_count, # از total_count استفاده می‌کنیم
-                failed_countries=[] # لیست خطاها خالی است
-            )
-
-    except (ConnectionError, TimeoutError) as api_error:
-        logger.error(f"API communication error during team update for {target_description}: {api_error}", exc_info=False)
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Could not connect to the external API or request timed out while processing {target_description}: {type(api_error).__name__}"
+        task_result = update_teams_by_country_task.apply_async(args=[country_name])
+        logger.info(f"Celery task queued with ID: {task_result.id} for country '{country_name}'.")
+        return TaskQueueResponse(
+            status="success",
+            message=f"Teams update task for country '{country_name}' has been queued successfully.",
+            task_id=task_result.id,
         )
-    except LookupError as data_error:
-        logger.warning(f"Data lookup error during team update for {target_description}: {data_error}")
-        # این خطا معمولا برای تک کشور معنی دارد
-        if not process_all:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Data not found for {target_description}: {data_error}"
-            )
-        else: # اگر در حین پردازش همه کشورها رخ دهد (مثلا در گرفتن لیست اولیه)
-             raise HTTPException(
-                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                 detail=f"Lookup error during 'all countries' process: {data_error}"
-             )
-    except ValueError as validation_error:
-        logger.error(f"Data processing or validation error during team update for {target_description}: {validation_error}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Data processing error for {target_description}: {validation_error}"
-        )
+        
     except Exception as e:
-        logger.exception(f"Unexpected error occurred during admin-triggered team update for {target_description}.")
+        logger.exception(f"Failed to queue Celery task for teams update for country '{country_name}'. Error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"An unexpected internal error occurred processing {target_description}: {type(e).__name__}"
+            detail=f"Failed to queue background task for country '{country_name}': {e}",
         )
+
+@router.post(
+    "/update-by-league-season/{league_id}/{season}",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=TaskQueueResponse, 
+    summary="Queue Background Task to Update Teams & Venues by League/Season",
+    description=(
+        "Queues a background task to update teams and venues for a given league and season. "
+        "Requires Admin privileges."
+    )
+)
+async def queue_team_venue_update_by_league_season(
+    *,
+    admin_user: AdminUser,
+    league_id: int = Path(..., title="External ID of the League", ge=1),
+    season: int = Path(..., title="Season Year (e.g., 2023)", ge=1990)
+) -> TaskQueueResponse:
+    """
+    Queues a background task to update teams and venues for a given league and season.
+    """
+    logger.info(f"Admin request from '{admin_user.username}': Queue team/venue update task for L={league_id}/S={season}.")
+
+    try:
+        # ارسال تسک به صورت آسنکرون
+        task_result = update_teams_by_league_season_task.apply_async(args=[league_id, season])
+        logger.info(f"Celery task queued with ID: {task_result.id} for L={league_id}/S={season}")
+        return TaskQueueResponse(
+            status="success",
+            message=f"Team/Venue update task for league {league_id}, season {season} has been queued successfully.",
+            task_id=task_result.id,
+        )
+
+    except Exception as e:
+        logger.exception(f"Failed to queue Celery task for team/venue update (L={league_id}/S={season}). Error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to queue background task for L={league_id}/S={season}: {e}"
+        )
+
+@router.post(
+    "/update-by-id/{team_id}",
+    response_model=TaskQueueResponse, 
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Queue Background Task to Update a Team by ID",
+)
+async def queue_team_update_by_id(
+    *,
+    admin_user: AdminUser,
+    team_id: int = Path(..., title="Team ID", ge=1),
+) -> TaskQueueResponse:
+    """Queues a background task to update a specific team by its ID."""
+    logger.info(f"Admin request from '{admin_user.username}': Queue team update task for ID={team_id}.")
+    try:
+        task_result = update_team_by_id_task.apply_async(args=[team_id])
+        logger.info(f"Celery task queued with ID: {task_result.id} for team ID={team_id}.")
+        return TaskQueueResponse(
+            status="success",
+            message=f"Team update task for ID={team_id} has been queued successfully.",
+            task_id=task_result.id,
+        )
+        
+    except Exception as e:
+        logger.exception(f"Failed to queue Celery task for team update (ID={team_id}). Error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to queue background task for team ID={team_id}: {e}",
+        )
+
