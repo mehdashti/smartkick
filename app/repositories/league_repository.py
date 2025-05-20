@@ -2,7 +2,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 import logging
 from app.models import League as DBLeague
 
@@ -18,6 +18,26 @@ class LeagueRepository:
         stmt = select(DBLeague)  
         result = await self.db.execute(stmt)
         return result.scalars().all() 
+
+    async def get_current_leagues(self) -> list[DBLeague]:
+        """Fetch all current leagues from the database."""
+        logger.debug("Fetching all current leagues")
+        stmt = select(DBLeague).filter(DBLeague.is_current == True)
+        result = await self.db.execute(stmt)
+        return result.scalars().all()
+
+    async def get_league_season_pairs(self) -> List[Tuple[int, int]]:
+        """
+        Retrieves only league_id and season pairs from database
+        
+        Returns:
+            List[Tuple[int, int]]: List of (league_id, season) pairs
+        """
+        stmt = select(DBLeague.league_id, DBLeague.season).distinct()
+        result = await self.db.execute(stmt)
+        return result.all()
+
+    
 
     async def bulk_upsert_leagues(self, leagues_data: List[Dict[str, Any]]) -> int:
         """Bulk upsert leagues."""

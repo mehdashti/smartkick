@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from app.models.venue import Venue
     from app.models.player_season_stats import PlayerSeasonStats  
     from app.models.match import Match
+    from app.models.match_lineup import MatchLineup
 
 class Team(Base):
     __tablename__ = "teams"
@@ -62,6 +63,10 @@ class Team(Base):
         back_populates="away_team",
         lazy="noload",
         foreign_keys="[Match.away_team_id]"
+    )
+    lineups: Mapped[List["MatchLineup"]] = relationship(
+        back_populates="team", 
+        lazy="noload"
     )
 
     def __repr__(self) -> str:

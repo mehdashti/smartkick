@@ -34,6 +34,13 @@ class TeamRepository:
         result = await self.db.execute(stmt)
         return result.scalars().all() 
 
+    async def get_all_teams_ids(self) -> list[int]:
+        """Fetch all team IDs from the database."""
+        logger.debug("Fetching all team IDs")
+        stmt = select(DBTeam.team_id)  
+        result = await self.db.execute(stmt)
+        return [row[0] for row in result.fetchall()]
+
     async def bulk_upsert_teams(self, teams_data: List[Dict[str, Any]]) -> int:
         """Bulk upsert teams."""
         if not teams_data:

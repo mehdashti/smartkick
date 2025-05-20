@@ -23,7 +23,7 @@ echo "Access Token obtained."
 
 # --- مرحله ۲: ارسال تسک به Celery ---
 echo "Sending task to Celery..."
-TASK_RESPONSE=$(curl -s -X POST "$API_BASE_URL/admin/leagues/update-leagues" \
+TASK_RESPONSE=$(curl -s -X POST "$API_BASE_URL/admin/fixtures/update-lineups/1223956" \
    -H "Authorization: Bearer $ACCESS_TOKEN" \
    -H "Content-Type: application/json")
 

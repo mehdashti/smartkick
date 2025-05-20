@@ -64,6 +64,7 @@ class TeamOut(TeamBase):
     country_details: Optional["CountryOut"] = Field(None, description="Country details", alias="country")
     venue: Optional["VenueOut"] = Field(None, description="Venue details")
     leagues: Optional[List["LeagueOut"]] = Field(None, description="Leagues team participates in")
+    lineups: Optional[List["MatchLineupOut"]] = Field(None, description="Historical lineups for this team")
 
 class TeamSummaryOut(APIModel):
     """Compact team representation for lists"""

@@ -59,6 +59,17 @@ from .user import (
 from .tasks import (
     TaskQueueResponse
 )
+from .match_lineups import (
+    CoachSchema,
+    TeamColorsSchema,
+    PlayerSchema,
+    MatchLineupAPIData,
+    MatchLineupCreateInternal,
+    MatchLineupUpdate,
+    MatchLineupOut,
+    MatchLineupApiResponse
+)
+
 
 
 # 2. Call model_rebuild() for all models that use forward references
@@ -94,6 +105,7 @@ model_rebuild_candidates = [
     PlayerSeasonStatsOut,
     PlayerOut,
     MatchOut,
+    MatchLineupOut,
     # Add any other models if they use forward references or are part of such chains
     # For example, if PlayerListResponse contains PlayerOut, etc.
     CountryListResponse,

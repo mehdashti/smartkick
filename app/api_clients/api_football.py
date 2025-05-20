@@ -649,3 +649,27 @@ async def fetch_fixtures_by_league_season(league_id: int, season: int) -> Option
     except Exception as e:
         logger.exception(f"Unexpected error fetching fixtures (L:{league_id}, S:{season}): {e}")
         raise ConnectionError(f"Unexpected error connecting to API for fixtures: {e}") from e
+
+
+async def fetch_lineups_by_id(match_id: int) -> List[Dict[str, Any]]:
+    endpoint = "/fixtures/lineups"
+    params = {"fixture": str(match_id)}
+    logger.info(f"Fetching team from external API for external_id={match_id}")
+    try:
+        data = await _make_api_request("GET", endpoint, params=params)
+
+        if data.get("errors") and (isinstance(data["errors"], list) and data["errors"] or isinstance(data["errors"], dict) and data["errors"]):
+            logger.error(f"API reported errors fetching fixture lineups for id={match_id}: {data['errors']}")
+            return None
+
+        response_list = data.get('response')
+            
+        return response_list 
+
+
+    except (ValueError, ConnectionError, TimeoutError) as api_error:
+        logger.error(f"API Error fetching team for id={match_id}: {api_error}", exc_info=True)
+        raise api_error 
+    except Exception as e:
+        logger.exception(f"Unexpected error fetching team for id={match_id}: {e}")
+        raise ConnectionError(f"Unexpected error connecting to API for team by id: {e}") from e

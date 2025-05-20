@@ -34,6 +34,13 @@ class VenueRepository:
         result = await self.db.execute(stmt)
         return result.scalars().all() 
 
+    async def get_all_venues_ids(self) -> list[int]:
+        """Fetch all venue IDs from the database."""
+        logger.debug("Fetching all venue IDs")
+        stmt = select(DBVenue.venue_id)  
+        result = await self.db.execute(stmt)
+        return [row[0] for row in result.fetchall()]
+
     async def bulk_upsert_venues(self, venues_data: List[Dict[str, Any]]) -> int:
         """Bulk upsert venues."""
         if not venues_data:

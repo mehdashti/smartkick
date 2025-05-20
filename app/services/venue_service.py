@@ -29,7 +29,7 @@ class VenueService:
             "image_url": venue_api_data.get('image'),
         }
 
-    async def update_venue_by_id(self, db: AsyncSession, venue_id: int) -> int:
+    async def update_venue_by_id(self, db: AsyncSession, venue_id: int) -> bool:
         """
         یک ورزشگاه را با ID اصلی آن از API دریافت کرده و در دیتابیس Upsert می‌کند.
         """
@@ -39,24 +39,24 @@ class VenueService:
         venue_api_data = await api_football.fetch_venue_by_id(venue_id)
         if not venue_api_data:
             logger.warning(f"No venues found from API for id: '{venue_id}'. No update performed.")
-            return 0
+            return False
 
         # بررسی اینکه venue_api_data یک دیکشنری است
         if not isinstance(venue_api_data, dict):
             logger.error(f"Expected dict, got {type(venue_api_data)}: {venue_api_data}")
-            return 0
+            return False
 
         # پردازش داده venue
         processed_venue = self._process_venue_data(venue_api_data) if venue_api_data.get("id") else None
 
         if not processed_venue:
             logger.warning(f"No valid venue data to upsert for id: '{venue_id}'")
-            return 0
+            return False
 
         # Upsert تک venue
         updated_count = await venue_repo.bulk_upsert_venues([processed_venue])
         logger.info(f"Successfully updated {updated_count} venues for id: '{venue_id}'")
-        return updated_count
+        return True
 
 
     async def update_venues_by_country(self, db: AsyncSession, country_name: str) -> int:

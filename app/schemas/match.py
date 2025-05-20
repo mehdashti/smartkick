@@ -20,10 +20,25 @@ class APIModel(BaseModel):
 
 # --- Enums ---
 class MatchStatusShort(str, Enum):
-    HT = "HT"
-    FT = "FT"
+    TBD = "TBD"
     NS = "NS"
+    H1 = "1H"
+    HT = "HT"
+    H2 = "2H"
+    ET = "ET"
+    BT = "BT"
+    P = "P"
+    SUSP = "SUSP"
+    INT = "INT"
     LIVE = "LIVE"
+    FT = "FT"
+    AET = "AET"
+    PEN = "PEN"
+    PST = "PST"
+    CANC = "CANC"
+    ABD = "ABD"
+    AWD = "AWD"
+    WO = "WO"
 
 # --- Nested Schemas ---
 class PeriodsSchema(APIModel):
@@ -175,6 +190,7 @@ class MatchOut(APIModel):
     season: int = Field(..., description="Season year")
     created_at: datetime = Field(...)
     updated_at: datetime = Field(...)
+    lineups: Optional[List["MatchLineupOut"]] = Field(None, description="Lineups for this match")
     
     # Relationships
     venue: Optional["VenueOut"] = Field(None)

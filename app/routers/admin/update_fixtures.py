@@ -1,13 +1,11 @@
 # app/routers/admin/update_fixtures.py
 from fastapi import APIRouter, Depends, HTTPException, status, Path, Query
 from app.routers.dependencies import require_admin_user, AdminUser
-from app.tasks.fixture_tasks import update_fixtures_by_league_season_task, update_fixtures_current_leagues_task
+from app.tasks.fixture_tasks import update_fixtures_by_league_season_task, update_fixtures_current_leagues_task, update_fixture_lineups_task
 from app.schemas.tasks import TaskQueueResponse
 from app.core.database import async_session
 
 import logging
-
-
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +46,6 @@ async def queue_fixture_update_by_league_season(
         )
 
 
-
 @router.post(
     "/update-current",
     status_code=status.HTTP_202_ACCEPTED,
@@ -77,6 +74,35 @@ async def queue_fixture_update_current(
             detail=f"Failed to queue background task: {e}"
         )
 
+
+@router.post(
+    "/update-lineups/{match_id}",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=TaskQueueResponse, 
+    summary="Queue Background Task to Update Fixture Lineups",
+)
+async def queue_fixture_update_lineups(
+    *,
+    admin_user: AdminUser,
+    match_id: int = Path(..., title="External ID of the match", ge=1),
+) -> TaskQueueResponse:
+    logger.info(f"Admin request from '{admin_user.username}': Queue fixture lineups update task for Match={match_id}.")
+
+    try:
+        task_result = update_fixture_lineups_task.apply_async(args=[match_id])
+        logger.info(f"Celery task queued with ID: {task_result.id} for Match={match_id}")
+        return TaskQueueResponse(
+            status="success",
+            message=f"Fixture lineups update task for match {match_id} has been queued successfully.",
+            task_id=task_result.id,
+        )
+
+    except Exception as e:
+        logger.exception(f"Failed to queue Celery task for fixture lineups update (Match={match_id}). Error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to queue background task for Match={match_id}: {e}"
+        )
 
 
 
