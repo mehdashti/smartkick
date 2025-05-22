@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from app.models.venue import Venue
     from app.models.league import League
     from app.models.match_lineup import MatchLineup
+    from app.models.match_event import MatchEvent
 
 class Match(Base):
     __tablename__ = "matches"
@@ -91,7 +92,11 @@ class Match(Base):
         back_populates="match", 
         lazy="noload"
     )
-
+    events: Mapped[List["MatchEvent"]] = relationship(
+        back_populates="match",
+        lazy="noload",
+        cascade="all, delete-orphan" # Optional: if a Match is deleted, delete its events
+    )
 
     def __repr__(self) -> str:
         return f"<Match(match_id={self.match_id}, home={self.home_team_id}, away={self.away_team_id}, date='{self.date}')>"

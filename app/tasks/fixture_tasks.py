@@ -1,13 +1,15 @@
+# app/tasks/fixtures_tasks.py
 from celery import shared_task
 from app.services.fixture_service import FixtureService
 from app.core.database import async_session
 import logging
 import asyncio
 from app.repositories.league_repository import LeagueRepository
+from typing import List, Dict, Any
 
 logger = logging.getLogger(__name__)
 
-@shared_task(bind=True, name="app.tasks.team_tasks.update_fixtures_by_league_season_task")
+@shared_task(bind=True, name="app.tasks.fixture_tasks.update_fixtures_by_league_season_task")
 def update_fixtures_by_league_season_task(self, league_id: int, season: int):
     loop = asyncio.get_event_loop()
     if loop.is_closed():
@@ -50,7 +52,7 @@ async def _update_fixtures_by_league_season(league_id: int, season: int):
             await session.close()
 
 
-@shared_task(bind=True, name="app.tasks.team_tasks.update_fixtures_current_leagues_task")
+@shared_task(bind=True, name="app.tasks.fixture_tasks.update_fixtures_current_leagues_task")
 def update_fixtures_current_leagues_task(self):
     loop = asyncio.get_event_loop()
     if loop.is_closed():
@@ -110,35 +112,35 @@ async def _update_fixtures_current_leagues():
         return all_results 
 
 
-@shared_task(bind=True, name="app.tasks.team_tasks.update_fixture_lineups_task")
-def update_fixture_lineups_task(self, match_id: int):
+@shared_task(bind=True, name="app.tasks.fixture_tasks.update_fixtures_by_ids_task")
+def update_fixtures_by_ids_task(self, match_ids: List[int]):
     loop = asyncio.get_event_loop()
     if loop.is_closed():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-    logger.info(f"Task started: update_fixture_lineups_task with match_id={match_id}")
+    logger.info(f"Task started: update_fixtures_by_ids_task with match_ids={match_ids}")
     try:
-        result = loop.run_until_complete(_update_fixture_lineups(match_id))
+        result = loop.run_until_complete(_update_fixtures_by_ids(match_ids))
         logger.info(f"Task completed successfully: {result}")
         return {
             "status": "success",
-            "message": f"Fixture lienups update task for league {match_id} completed successfully.",
+            "message": f"Fixtures update task for match_ids {match_ids} completed successfully.",
             "task_id": self.request.id,  
         }
     except Exception as e:
         logger.exception(f"Error in Celery task: {e}")
         return {
             "status": "error",
-            "message": f"Failed to update fixture lineups {match_id}: {e}",
+            "message": f"Failed to update fixtures for match_ids {match_ids},: {e}",
             "task_id": self.request.id, 
         }
 
-async def _update_fixture_lineups(match_id: int):
+async def _update_fixtures_by_ids(match_ids: List[int]):
     session = await async_session() 
     async with session as db:
         try:
             fixture_service = FixtureService()
-            updated_count = await fixture_service.update_fixture_lineups(db=db, match_id=match_id)
+            updated_count = await fixture_service.update_fixtures_by_ids(db=db, match_ids=match_ids)
             await db.commit() 
 
             return {

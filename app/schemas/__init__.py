@@ -62,14 +62,35 @@ from .tasks import (
 from .match_lineups import (
     CoachSchema,
     TeamColorsSchema,
-    PlayerSchema,
-    MatchLineupAPIData,
+    TeamColorsPlayerSchema,
+    PlayerDetailSchema,
+    PlayerEntrySchema,
+    TeamInfoForLineupSchema,
+    SingleTeamLineupDataFromAPI,
+    MatchLineupApiResponse,
     MatchLineupCreateInternal,
     MatchLineupUpdate,
-    MatchLineupOut,
-    MatchLineupApiResponse
+    MatchLineupOut
 )
-
+from .match_event import (
+    EventTimeSchema,
+    EventTeamSchema,
+    EventPlayerSchema,
+    SingleEventDataFromAPI,
+    MatchEventApiResponse,
+    MatchEventCreateInternal,
+    MatchEventUpdate,
+    MatchEventOut
+)
+from .match_team_statistic import (
+    APIStatisticItem,
+    APITeamInfoForStats,
+    SingleTeamStatisticDataFromAPI,
+    MatchStatisticsApiResponse,
+    MatchTeamStatisticCreateInternal,
+    MatchTeamStatisticUpdate,
+    MatchTeamStatisticOut
+)
 
 
 # 2. Call model_rebuild() for all models that use forward references
@@ -84,11 +105,13 @@ from .match_lineups import (
 # Schemas with forward references:
 # - CountryOut (references "LeagueOut")
 # - LeagueOut (references "CountryOut", "PlayerSeasonStatsOut")
-# - MatchOut (references "VenueOut", "LeagueOut", "TeamOut")
+# - MatchOut (references "VenueOut", "TeamOut", "MatchLineupOut") # LeagueOut is no longer direct relationship for MatchOut
 # - PlayerOut (references "PlayerSeasonStatsOut")
 # - PlayerSeasonStatsOut (references "PlayerOut", "TeamOut", "LeagueOut")
 # - TeamOut (references "CountryOut", "VenueOut", "LeagueOut")
 # - VenueOut (references "CountryOut", "TeamOut")
+# - MatchLineupOut (potentially references "TeamOut", "PlayerOut" if not just snapshot)
+# - MatchEventOut (potentially references "TeamOut", "PlayerOut" if not just snapshot)
 
 # It's safest to rebuild all involved models after all are imported.
 # The order of rebuild calls here *can* matter if one model_rebuild()
@@ -106,6 +129,8 @@ model_rebuild_candidates = [
     PlayerOut,
     MatchOut,
     MatchLineupOut,
+    MatchEventOut, # <<< اضافه کردن MatchEventOut به لیست بازسازی >>>
+    MatchTeamStatisticOut,
     # Add any other models if they use forward references or are part of such chains
     # For example, if PlayerListResponse contains PlayerOut, etc.
     CountryListResponse,
@@ -117,16 +142,26 @@ model_rebuild_candidates = [
     PlayerWithStatsApiResponse,
     PlayerStatsApiResponse,
     MatchApiResponse,
+    MatchLineupApiResponse,
+    MatchEventApiResponse, # <<< اضافه کردن MatchEventApiResponse به لیست بازسازی (اگر از ارجاع رو به جلو در آیتم‌هایش استفاده کند) >>>
+    MatchStatisticsApiResponse,
     TimezoneListResponse,
 ]
 
 for model in model_rebuild_candidates:
     # Pydantic V2's model_rebuild is idempotent and handles dependencies well.
     # No need to check __pydantic_model_rebuild_required__ in most cases.
-    model.model_rebuild()
+    try:
+        model.model_rebuild()
+    except Exception as e:
+        print(f"Warning: Could not rebuild model {model.__name__}. Error: {e}")
 
-# Schemas without apparent forward references (like User, Token, Timezone, Task)
+
+# Schemas without apparent forward references (like User, Token, Timezone, Task,
+# and most CreateInternal/Update schemas if they don't use forward refs)
 # generally do not need explicit model_rebuild() unless they become part of
 # a new circular dependency or use forward refs internally.
+# Input schemas like MatchEventApiResponseItem, EventTimeSchema etc., usually don't need rebuild
+# unless they themselves contain forward references.
 
 print("Schemas initialized and models rebuilt.") # Optional: for debugging

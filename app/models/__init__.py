@@ -15,6 +15,8 @@ from .player_season_stats import PlayerSeasonStats
 from .team import Team 
 from .match import Match
 from .match_lineup import MatchLineup
+from .match_event import MatchEvent
+from .match_team_statistic import MatchTeamStatistic
 
     # <--- مثال: سایر مدل ها
 #from .player import Player   # <--- مثال: سایر مدل ها

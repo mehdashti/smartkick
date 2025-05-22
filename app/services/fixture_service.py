@@ -1,29 +1,22 @@
 # app/services/fixture_service.py
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.dialects.postgresql import insert
+from pydantic import ValidationError
 from typing import List, Dict, Any, Optional, Tuple, Set
 import logging
 
-
-
+from app.core.config import settings
 from app.api_clients import api_football
+from app.repositories.team_repository import TeamRepository
 from app.repositories.fixture_repository import FixtureRepository
 from app.repositories.venue_repository import VenueRepository
 from app.repositories.league_repository import LeagueRepository
-from app.repositories.team_repository import TeamRepository
-from app.services.venue_service import VenueService
 from app.services.team_service import TeamService
-from app.core.config import settings
-from app.schemas.match_lineups import MatchLineupAPIData, MatchLineupCreateInternal, PlayerSchema
-
-
-from typing import List, Tuple
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.schemas.match import MatchAPIInputData, MatchCreateInternal
-from app.models.match import Match
-
-from sqlalchemy.dialects.postgresql import insert
-from pydantic import ValidationError
-
+from app.services.venue_service import VenueService
+from app.schemas.match import (
+    MatchAPIInputData,
+    MatchCreateInternal,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -173,135 +166,252 @@ class FixtureService:
 
 
 
-    async def update_fixture_lineups(
+    # --- تابع اصلی برای پردازش پاسخ جامع API ---
+    async def process_comprehensive_fixture_api_response(
         self,
         db: AsyncSession,
-        match_id: int,
-        batch_size: int = settings.DEFAULT_DB_BATCH_SIZE
-    ) -> Tuple[int, int]:
-        logger.info(f"Updating fixture lineups for match={match_id}")
+        api_response_data: Dict[str, Any]
+    ) -> Dict[str, Tuple[int, int]]:
+        overall_results = {
+            "fixtures": (0, 0),
+            "events": (0, 0),
+            "lineups": (0, 0),
+            "team_statistics": (0, 0),
+            "player_profiles_and_season_stats": (0, 0), # نام را برای وضوح تغییر دادم
+        }
 
-        api_result = await api_football.fetch_lineups_by_id(match_id)
+        if "response" not in api_response_data or not isinstance(api_response_data["response"], list):
+            logger.error("Invalid API response structure: 'response' key missing or not a list.")
+            return overall_results
 
-        if not api_result or not isinstance(api_result, list):
-            logger.warning(f"No fixture lineups found in API response. API Response: {api_result}")
-            return (0, 0)
+        raw_fixture_entries_from_api = api_response_data["response"]
 
-        return await self._process_fixture_lineups_entry(db, match_id, api_result)
+        if not raw_fixture_entries_from_api:
+            logger.info("No fixture entries found in the API response.")
+            return overall_results
 
-
-
-    async def _process_fixture_lineups_entry(
-        self,
-        db: AsyncSession,
-        match_id_param: int,
-        raw_entries: List[dict] 
-    ) -> Tuple[int, int]:
-
-        team_repo = TeamRepository(db)
+        # نمونه‌سازی سرویس‌ها و ریپازیتوری‌های مورد نیاز
+        # اینها را می‌توان یک بار در ابتدا ایجاد کرد اگر در حلقه‌ها استفاده می‌شوند
+        player_service = PlayerService() # <<< نمونه‌سازی PlayerService
         team_service = TeamService()
-        fixture_repo = FixtureRepository(db)  
+        player_repo = PlayerRepository(db)
+        player_season_stats_repo = PlayerSeasonStatsRepository(db)
+        team_repo = TeamRepository(db) # برای گرفتن ID تیم‌های موجود
 
-        existing_team_ids = set(await team_repo.get_all_teams_ids()) 
+        # گرفتن ID تیم‌های موجود برای جلوگیری از فراخوانی‌های غیرضروری API
+        # این کار بهتر است یک بار قبل از حلقه‌ها انجام شود.
+        existing_team_ids = set(await team_repo.get_all_teams_ids())
 
-        success_count = 0
-        error_count = 0
-        lineups_to_upsert_internal_models = [] # لیستی از مدل‌های Pydantic برای آپسرت
 
-        for entry_dict_from_api_response in raw_entries:
-            try:
-                # validated_api_data یک نمونه از MatchLineupAPIData خواهد بود
-                validated_api_data = MatchLineupAPIData(**entry_dict_from_api_response)
+        # --------------------------------------------------------------------
+        # 1. پردازش اطلاعات اصلی مسابقات (Fixture, League, Teams, Goals, Score)
+        # ... (این بخش بدون تغییر باقی می‌ماند) ...
+        logger.info(f"Processing {len(raw_fixture_entries_from_api)} fixture base entries...")
+        base_fixture_data_list = []
+        for single_fixture_full_data in raw_fixture_entries_from_api:
+            current_base_fixture_data = {
+                "fixture": single_fixture_full_data.get("fixture"),
+                "league": single_fixture_full_data.get("league"),
+                "teams": single_fixture_full_data.get("teams"),
+                "goals": single_fixture_full_data.get("goals"),
+                "score": single_fixture_full_data.get("score"),
+            }
+            # اطمینان از وجود تیم‌ها در دیتابیس (از کد _process_fixtures_entry شما الهام گرفته شده)
+            home_team_id = current_base_fixture_data.get("teams", {}).get("home", {}).get("id")
+            away_team_id = current_base_fixture_data.get("teams", {}).get("away", {}).get("id")
+            if home_team_id and home_team_id not in existing_team_ids:
+                logger.info(f"Home team {home_team_id} not found, updating via TeamService...")
+                await team_service.update_team_by_id(db, home_team_id)
+                existing_team_ids.add(home_team_id)
+            if away_team_id and away_team_id not in existing_team_ids:
+                logger.info(f"Away team {away_team_id} not found, updating via TeamService...")
+                await team_service.update_team_by_id(db, away_team_id)
+                existing_team_ids.add(away_team_id)
 
-                if not validated_api_data.team or not validated_api_data.team.id:
-                    logger.warning(f"Skipping lineup entry due to missing team data or team ID in API response for match {match_id_param}")
-                    error_count += 1
+            base_fixture_data_list.append(current_base_fixture_data)
+        try:
+            fixture_success, fixture_errors = await self._process_fixtures_entry(db, base_fixture_data_list)
+            overall_results["fixtures"] = (fixture_success, fixture_errors)
+        except Exception as e:
+            logger.exception(f"Error during bulk processing of fixture base entries: {e}")
+            overall_results["fixtures"] = (0, len(raw_fixture_entries_from_api))
+
+
+        # --------------------------------------------------------------------
+        # 2. پردازش رویدادها (Events) برای هر مسابقه
+        # ... (این بخش بدون تغییر باقی می‌ماند) ...
+        all_events_success = 0
+        all_events_errors = 0
+        for single_fixture_full_data in raw_fixture_entries_from_api:
+            match_id = single_fixture_full_data.get("fixture", {}).get("id")
+            events_list = single_fixture_full_data.get("events")
+            if match_id and events_list is not None:
+                mock_events_api_response = {"get": "fixtures/events", "parameters": {"fixture": str(match_id)}, "errors": [], "results": len(events_list), "paging": {"current": 1, "total": 1}, "response": events_list}
+                try:
+                    s_count, e_count = await self._process_fixture_events_entry(db, match_id, mock_events_api_response)
+                    all_events_success += s_count
+                    all_events_errors += e_count
+                except Exception as e:
+                    logger.exception(f"Error processing events for match_id {match_id}: {e}")
+                    all_events_errors += len(events_list)
+        overall_results["events"] = (all_events_success, all_events_errors)
+
+
+        # --------------------------------------------------------------------
+        # 3. پردازش ترکیب‌ها (Lineups) برای هر مسابقه
+        # ... (این بخش بدون تغییر باقی می‌ماند) ...
+        all_lineups_success = 0
+        all_lineups_errors = 0
+        for single_fixture_full_data in raw_fixture_entries_from_api:
+            match_id = single_fixture_full_data.get("fixture", {}).get("id")
+            lineups_list = single_fixture_full_data.get("lineups")
+            if match_id and lineups_list:
+                try:
+                    s_count, e_count = await self._process_fixture_lineups_entry(db, match_id, lineups_list)
+                    all_lineups_success += s_count
+                    all_lineups_errors += e_count
+                except Exception as e:
+                    logger.exception(f"Error processing lineups for match_id {match_id}: {e}")
+                    all_lineups_errors += len(lineups_list)
+        overall_results["lineups"] = (all_lineups_success, all_lineups_errors)
+
+        # --------------------------------------------------------------------
+        # 4. پردازش آمار تیمی (Team Statistics) برای هر مسابقه
+        # ... (این بخش بدون تغییر باقی می‌ماند) ...
+        all_team_stats_success = 0
+        all_team_stats_errors = 0
+        for single_fixture_full_data in raw_fixture_entries_from_api:
+            match_id = single_fixture_full_data.get("fixture", {}).get("id")
+            team_statistics_list = single_fixture_full_data.get("statistics")
+            if match_id and team_statistics_list is not None:
+                mock_stats_api_response = {"get": "fixtures/statistics", "parameters": {"fixture": str(match_id)},"errors": [],"results": len(team_statistics_list),"paging": {"current": 1, "total": 1},"response": team_statistics_list}
+                try:
+                    s_count, e_count = await self._process_fixture_statistics_entry(db, match_id, mock_stats_api_response)
+                    all_team_stats_success += s_count
+                    all_team_stats_errors += e_count
+                except Exception as e:
+                    logger.exception(f"Error processing team statistics for match_id {match_id}: {e}")
+                    all_team_stats_errors += len(team_statistics_list)
+        overall_results["team_statistics"] = (all_team_stats_success, all_team_stats_errors)
+
+
+        # --------------------------------------------------------------------
+        # 5. پردازش آمار بازیکنان (Player Profiles & Season Statistics)
+        # --------------------------------------------------------------------
+        logger.info("Processing player profiles and season statistics...")
+        all_player_profiles_upserted_count = 0
+        all_player_season_stats_upserted_count = 0
+        player_processing_errors = 0
+
+        # جمع‌آوری تمام داده‌های بازیکنان و آمار فصلی آنها از تمام مسابقات
+        aggregated_player_data_to_upsert: List[Dict[str, Any]] = []
+        aggregated_player_season_stats_to_upsert: List[Dict[str, Any]] = []
+
+        for single_fixture_full_data in raw_fixture_entries_from_api:
+            match_id = single_fixture_full_data.get("fixture", {}).get("id")
+            # "players" یک لیست است، هر آیتم شامل اطلاعات یک تیم و لیست بازیکنان آن تیم
+            teams_with_players_list = single_fixture_full_data.get("players")
+
+            if not (match_id and teams_with_players_list):
+                if match_id: logger.info(f"No 'players' data for match_id: {match_id}")
+                continue
+
+            for team_entry in teams_with_players_list: # تیم میزبان و میهمان
+                # team_info = team_entry.get("team") # اطلاعات تیم (id, name, logo)
+                players_in_team_list = team_entry.get("players") # لیست بازیکنان این تیم با آمارشان
+
+                if not players_in_team_list:
                     continue
 
-                team_id = validated_api_data.team.id
+                for player_api_entry in players_in_team_list:
+                    # player_api_entry ساختاری شبیه به ورودی _process_player_and_stats_entry دارد
+                    # یعنی {"player": {...}, "statistics": [{...}, ...]}
+                    try:
+                        # استفاده از متد PlayerService برای پردازش هر بازیکن و آمار فصلی او
+                        player_profile_data, player_season_stats_list, teams_in_player_stats = \
+                            await player_service._process_player_and_stats_entry(player_api_entry)
 
-                if team_id not in existing_team_ids:
-                    logger.info(f"Team ID {team_id} for match {match_id_param} not found locally. Attempting to update/create from API...")
-                    team_updated_or_created = await team_service.update_team_by_id(db, team_id)
-                    if team_updated_or_created:
-                        existing_team_ids.add(team_id)
-                        logger.info(f"Team ID {team_id} successfully updated/created.")
-                    else:
-                        logger.warning(f"Failed to update/create team ID {team_id} for match {match_id_param}. Skipping lineup for this team.")
-                        error_count += 1
-                        continue
+                        if player_profile_data and player_profile_data.get("id") is not None:
+                            aggregated_player_data_to_upsert.append(player_profile_data)
 
-                # پردازش startXI
-                start_xi_for_db = None
-                if validated_api_data.startXI:
-                    processed_players_startxi = []
-                    for player_container_dict in validated_api_data.startXI: # player_container_dict is {"player": PlayerSchema(...)}
-                        player_schema_instance = player_container_dict.get("player")
-                        if isinstance(player_schema_instance, PlayerSchema):
-                            processed_players_startxi.append(player_schema_instance.model_dump(exclude_none=True))
-                        elif isinstance(player_schema_instance, dict): # اگر به نحوی PlayerSchema ولیدیت نشده بود
-                            processed_players_startxi.append(player_schema_instance)
-                    start_xi_for_db = processed_players_startxi if processed_players_startxi else None
+                        if player_season_stats_list:
+                            aggregated_player_season_stats_to_upsert.extend(player_season_stats_list)
+                        
+                        # اطمینان از وجود تیم‌های ذکر شده در آمار بازیکن در دیتابیس
+                        if teams_in_player_stats:
+                            for team_id_from_player_stat in teams_in_player_stats:
+                                if team_id_from_player_stat and team_id_from_player_stat not in existing_team_ids:
+                                    logger.info(f"Team {team_id_from_player_stat} from player stats not found, updating via TeamService...")
+                                    await team_service.update_team_by_id(db, team_id_from_player_stat)
+                                    existing_team_ids.add(team_id_from_player_stat)
 
-                # پردازش substitutes
-                substitutes_for_db = None
-                if validated_api_data.substitutes:
-                    processed_players_subs = []
-                    for sub_container_dict in validated_api_data.substitutes: # sub_container_dict is {"player": PlayerSchema(...)}
-                        sub_schema_instance = sub_container_dict.get("player")
-                        if isinstance(sub_schema_instance, PlayerSchema):
-                            processed_players_subs.append(sub_schema_instance.model_dump(exclude_none=True))
-                        elif isinstance(sub_schema_instance, dict):
-                            processed_players_subs.append(sub_schema_instance)
-                    substitutes_for_db = processed_players_subs if processed_players_subs else None
+                    except Exception as e:
+                        player_id_for_log = player_api_entry.get("player", {}).get("id", "N/A")
+                        logger.exception(f"Error processing player entry (ID: {player_id_for_log}) from comprehensive fixture data (match_id: {match_id}): {e}")
+                        player_processing_errors += 1
+        
+        # پس از جمع‌آوری تمام داده‌ها، آپسرت گروهی انجام می‌شود
 
-                team_colors_for_db = None
-                if validated_api_data.team and validated_api_data.team.colors:
-                    team_colors_for_db = validated_api_data.team.colors.model_dump(exclude_none=True)
-
-                # ساخت نمونه از MatchLineupCreateInternal
-                lineup_create_data = MatchLineupCreateInternal(
-                    match_id=match_id_param,
-                    team_id=team_id,
-                    team_name=validated_api_data.team.name,
-                    formation=validated_api_data.formation,
-                    startXI=start_xi_for_db,       # این حالا لیستی از دیکشنری‌های بازیکنان است
-                    substitutes=substitutes_for_db, # این هم لیستی از دیکشنری‌های بازیکنان است
-                    coach_id=validated_api_data.coach.id if validated_api_data.coach else None,
-                    coach_name=validated_api_data.coach.name if validated_api_data.coach else None,
-                    coach_photo=str(validated_api_data.coach.photo) if validated_api_data.coach and validated_api_data.coach.photo else None,
-                    team_colors=team_colors_for_db
-                )
-                lineups_to_upsert_internal_models.append(lineup_create_data)
-                success_count += 1
-
-            except ValidationError as e:
-                logger.error(f"Pydantic validation error for lineup (match_id: {match_id_param}): {e.errors()} - Input: {entry_dict_from_api_response}")
-                error_count += 1
-            except Exception as e:
-                # برای دیباگ بهتر، traceback کامل را لاگ کنید
-                logger.exception(f"Unexpected error processing lineup (match_id: {match_id_param}): {str(e)} - Input: {entry_dict_from_api_response}")
-                error_count += 1
-
-        if lineups_to_upsert_internal_models:
-            # تبدیل مدل‌های داخلی به دیکشنری برای ارسال به ریپازیتوری
-            lineup_dicts_for_db = [model.model_dump(exclude_none=True, exclude_unset=True) for model in lineups_to_upsert_internal_models]
+        # 5.1 آپسرت پروفایل بازیکنان (با حذف موارد تکراری)
+        if aggregated_player_data_to_upsert:
+            unique_players_map: Dict[int, Dict[str, Any]] = {}
+            for p_data in aggregated_player_data_to_upsert:
+                p_id = p_data.get("id")
+                if p_id is not None:
+                    unique_players_map[p_id] = p_data # اگر تکراری باشد، آخرین مورد جایگزین می‌شود
+            
+            unique_player_list_for_db = list(unique_players_map.values())
+            logger.info(f"Attempting to bulk upsert {len(unique_player_list_for_db)} unique player profiles.")
             try:
-                await fixture_repo.bulk_upsert_lineups(lineup_dicts_for_db)
-                logger.info(f"Successfully attempted to upsert {len(lineup_dicts_for_db)} lineups for match_id {match_id_param}.")
+                count = await player_repo.bulk_upsert_players(unique_player_list_for_db)
+                all_player_profiles_upserted_count = count if count is not None else 0
+                logger.info(f"Player profiles bulk upsert successful. Count: {all_player_profiles_upserted_count}")
             except Exception as e:
-                logger.exception(f"Database error during lineup bulk upsert for match_id {match_id_param}: {e}")
-                # تنظیم مجدد شمارنده‌ها اگر آپسرت گروهی خطا داد
-                error_count += len(lineup_dicts_for_db)
-                success_count -= len(lineup_dicts_for_db) # اگر قبلاً success_count برای اینها اضافه شده بود
+                logger.exception(f"Error during bulk upsert of player profiles: {e}")
+                player_processing_errors += len(unique_player_list_for_db)
 
-        return (success_count, error_count)
+        # 5.2 آپسرت آمار فصلی بازیکنان (با حذف موارد تکراری بر اساس کلید ترکیبی)
+        if aggregated_player_season_stats_to_upsert:
+            unique_stats_map: Dict[Tuple[Optional[int], Optional[int], Optional[int], Optional[int]], Dict[str, Any]] = {}
+            for s_data in aggregated_player_season_stats_to_upsert:
+                # کلید ترکیبی برای تشخیص یکتایی آمار فصلی
+                stat_key = (
+                    s_data.get("player_id"),
+                    s_data.get("team_id"),
+                    s_data.get("league_id"),
+                    s_data.get("season")
+                )
+                if all(k is not None for k in stat_key): # اطمینان از وجود تمام بخش‌های کلید
+                    unique_stats_map[stat_key] = s_data
+            
+            unique_season_stats_list_for_db = list(unique_stats_map.values())
+            logger.info(f"Attempting to bulk upsert {len(unique_season_stats_list_for_db)} unique player season stats entries.")
+            try:
+                count = await player_season_stats_repo.bulk_upsert_stats(unique_season_stats_list_for_db)
+                all_player_season_stats_upserted_count = count if count is not None else 0
+                logger.info(f"Player season stats bulk upsert successful. Count: {all_player_season_stats_upserted_count}")
+            except Exception as e:
+                logger.exception(f"Error during bulk upsert of player season stats: {e}")
+                player_processing_errors += len(unique_season_stats_list_for_db)
+
+        overall_results["player_profiles_and_season_stats"] = (
+            all_player_profiles_upserted_count + all_player_season_stats_upserted_count, # شمارش موفقیت کلی
+            player_processing_errors
+        )
+        logger.info(f"Player profiles and season stats processing complete. Upserted Profiles: {all_player_profiles_upserted_count}, Upserted Season Stats: {all_player_season_stats_upserted_count}, Errors: {player_processing_errors}")
+
+        logger.info(f"Comprehensive fixture data processing finished. Overall Results: {overall_results}")
+        return overall_results
 
 
-    
+    async def update_fixtures_by_ids(
+        self,
+        db: AsyncSession,
+        match_ids: List[int],
+        batch_size: int = settings.DEFAULT_DB_BATCH_SIZE
+    ) -> Tuple[int, int]:
+        logger.info(f"Updating fixture events for match={match_ids}")
 
+        api_result = await api_football.fetch_events_by_id(match_ids)
 
-
-
-
-
+        return await self.process_comprehensive_fixture_api_response(db, api_result)

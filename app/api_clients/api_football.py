@@ -661,15 +661,92 @@ async def fetch_lineups_by_id(match_id: int) -> List[Dict[str, Any]]:
         if data.get("errors") and (isinstance(data["errors"], list) and data["errors"] or isinstance(data["errors"], dict) and data["errors"]):
             logger.error(f"API reported errors fetching fixture lineups for id={match_id}: {data['errors']}")
             return None
-
-        response_list = data.get('response')
             
-        return response_list 
+        return data 
 
 
     except (ValueError, ConnectionError, TimeoutError) as api_error:
-        logger.error(f"API Error fetching team for id={match_id}: {api_error}", exc_info=True)
+        logger.error(f"API Error fetching fixture lineups for id={match_id}: {api_error}", exc_info=True)
         raise api_error 
     except Exception as e:
-        logger.exception(f"Unexpected error fetching team for id={match_id}: {e}")
-        raise ConnectionError(f"Unexpected error connecting to API for team by id: {e}") from e
+        logger.exception(f"Unexpected error fetching fixture lineups for id={match_id}: {e}")
+        raise ConnectionError(f"Unexpected error connecting to API for fixture lineups by id: {e}") from e
+
+async def fetch_events_by_id(match_id: int) -> List[Dict[str, Any]]:
+    endpoint = "/fixtures/events"
+    params = {"fixture": str(match_id)}
+    logger.info(f"Fetching events from external API for external_id={match_id}")
+    try:
+        data = await _make_api_request("GET", endpoint, params=params)
+
+        if data.get("errors") and (isinstance(data["errors"], list) and data["errors"] or isinstance(data["errors"], dict) and data["errors"]):
+            logger.error(f"API reported errors fetching fixture events for id={match_id}: {data['errors']}")
+            return None
+          
+        return data
+
+
+    except (ValueError, ConnectionError, TimeoutError) as api_error:
+        logger.error(f"API Error fetching fixture events for id={match_id}: {api_error}", exc_info=True)
+        raise api_error 
+    except Exception as e:
+        logger.exception(f"Unexpected error fetching fixture events for id={match_id}: {e}")
+        raise ConnectionError(f"Unexpected error connecting to API for fixture events by id: {e}") from e
+
+
+async def fetch_statistics_by_id(match_id: int) -> List[Dict[str, Any]]:
+    endpoint = "/fixtures/statistics"
+    params = {"fixture": str(match_id)}
+    logger.info(f"Fetching statistics from external API for external_id={match_id}")
+    try:
+        data = await _make_api_request("GET", endpoint, params=params)
+
+        if data.get("errors") and (isinstance(data["errors"], list) and data["errors"] or isinstance(data["errors"], dict) and data["errors"]):
+            logger.error(f"API reported errors fetching fixture statistics for id={match_id}: {data['errors']}")
+            return None
+     
+        return data
+
+
+    except (ValueError, ConnectionError, TimeoutError) as api_error:
+        logger.error(f"API Error fetching fixture statistics for id={match_id}: {api_error}", exc_info=True)
+        raise api_error 
+    except Exception as e:
+        logger.exception(f"Unexpected error fetching fixture statistics for id={match_id}: {e}")
+        raise ConnectionError(f"Unexpected error connecting to API for fixture statistics by id: {e}") from e
+
+
+async def fetch_fixtures_by_ids(fixture_ids: List[int]) -> Optional[Dict[str, Any]]:
+    if not fixture_ids:
+        logger.warning("fetch_fixtures_by_ids called with an empty list of IDs.")
+        return None 
+    endpoint = "/fixtures"
+    ids_str = '-'.join(map(str, fixture_ids))
+    params = {"ids": ids_str}
+    logger.info(f"Fetching fixtures from external API (ids: {ids_str})")
+    try:
+        data = await _make_api_request("GET", endpoint, params=params)
+
+        if data.get("errors") and (isinstance(data["errors"], list) and data["errors"] or isinstance(data["errors"], dict) and data["errors"]):
+            logger.error(f"API reported errors fetching Fixtures (ids: {ids_str}): {data['errors']}")
+            if 'rateLimit' in str(data['errors']):
+                 raise TimeoutError("API Rate Limit Exceeded") 
+            return None
+
+        if 'response' not in data or not isinstance(data['response'], list):
+             logger.error(f"Invalid response structure for fixtures (ids: {ids_str}): Response: {data}")
+             return None
+
+        return data 
+
+    except TimeoutError as te: 
+         logger.error(f"API Rate Limit likely exceeded (ids: {ids_str})")
+         raise te 
+    except (ConnectionError, TimeoutError) as api_error:
+        logger.error(f"API Error fetching fixtures (ids: {ids_str}): {api_error}", exc_info=True)
+        raise api_error
+    except Exception as e:
+        logger.exception(f"Unexpected error fetching fixtures (ids: {ids_str}): {e}")
+        raise ConnectionError(f"Unexpected error connecting to API for fixtures: {e}") from e
+
+

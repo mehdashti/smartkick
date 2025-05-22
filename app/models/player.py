@@ -8,6 +8,7 @@ from app.core.database import Base
 
 if TYPE_CHECKING:
     from app.models.player_season_stats import PlayerSeasonStats  
+    from app.models.match_event import MatchEvent
 
 class Player(Base):
     __tablename__ = 'players'
@@ -36,6 +37,16 @@ class Player(Base):
         lazy="noload",
         cascade="all, delete-orphan",
         foreign_keys="[PlayerSeasonStats.player_id]"
+    )
+    match_events_as_actor: Mapped[List["MatchEvent"]] = relationship(
+        foreign_keys="[MatchEvent.player_id]", 
+        back_populates="player",
+        lazy="noload"
+    )
+    match_events_as_assist: Mapped[List["MatchEvent"]] = relationship(
+        foreign_keys="[MatchEvent.assist_player_id]",
+        back_populates="assist_player",
+        lazy="noload"
     )
 
 

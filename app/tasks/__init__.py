@@ -7,3 +7,6 @@ from .timezone_tasks import *
 from .league_tasks import *  # ثبت تسک‌های مربوط به لیگ‌ها 
 from .player_stats_tasks import *  # ثبت تسک‌های مربوط به آمار بازیکنان
 from .fixture_tasks import *  # ثبت تسک‌های مربوط به مسابقات
+from .lineups_tasks import *  # ثبت تسک‌های مربوط به ترکیب‌ها
+from .events_tasks import *  # ثبت تسک‌های مربوط به رویدادها
+from .fixture_statistics_tasks import *  # ثبت تسک‌های مربوط به آمار مسابقات
