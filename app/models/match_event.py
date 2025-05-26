@@ -1,4 +1,5 @@
 # app/models/match_event.py
+from __future__ import annotations
 from datetime import datetime
 from typing import Optional, TYPE_CHECKING
 from sqlalchemy.orm import Mapped, mapped_column, relationship

@@ -42,7 +42,8 @@ from .match import (
     TeamMatchInfoSchema, ScoreSchema, ScoreBreakdownSchema,
     FixtureAPIData, LeagueAPIData, TeamsAPIData, GoalsAPIData,
     MatchAPIInputData, MatchCreateInternal, MatchUpdate,
-    MatchOut, MatchApiResponseItem, MatchApiResponse
+    MatchOut, MatchApiResponseItem, MatchApiResponse,
+
 )
 from .timezone import (
     TimezoneBase, TimezoneAPIInputData, TimezoneCreateInternal,
@@ -90,6 +91,29 @@ from .match_team_statistic import (
     MatchTeamStatisticCreateInternal,
     MatchTeamStatisticUpdate,
     MatchTeamStatisticOut
+)
+
+from .player_season_stats import (
+    StatsTeamAPI,
+    StatsLeagueAPI,
+    StatsGamesAPI,
+    StatsSubstitutesAPI,
+    StatsShotsAPI,
+    StatsGoalsAPI,
+    StatsPassesAPI,
+    StatsTacklesAPI,
+    StatsDuelsAPI,
+    StatsDribblesAPI,
+    StatsFoulsAPI,
+    StatsCardsAPI,
+    StatsPenaltyAPI,
+    PlayerStatisticItemAPI,
+    PlayerSeasonStatsBase,
+    PlayerSeasonStatsCreateInternal,
+    PlayerSeasonStatsUpdate,
+    PlayerSeasonStatsOut,
+    PlayerStatsApiResponseItem,
+    PlayerStatsApiResponse
 )
 
 

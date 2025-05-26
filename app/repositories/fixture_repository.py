@@ -18,8 +18,10 @@ class FixtureRepository:
         result = await self.db.execute(query)
         fixtures_ids = [row[0] for row in result.fetchall()]
         return fixtures_ids
-    
+
+
     async def bulk_upsert_fixtures(self, fixtures_data: List[Dict[str, Any]]) -> int:
+        
         insert_stmt = pg_insert(Match).values(fixtures_data)
         
         upsert_stmt = insert_stmt.on_conflict_do_update(

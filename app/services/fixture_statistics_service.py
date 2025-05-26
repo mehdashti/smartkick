@@ -59,7 +59,8 @@ class FixtureStatisticsService:
         batch_size: int = settings.DEFAULT_DB_BATCH_SIZE 
     ) -> Tuple[int, int]:
         logger.info(f"Updating fixture statistics for match_id={match_id}")
-
+        statistic_repo = FixtureStatisticsRepository(db)
+        
         api_response_dict = await api_football.fetch_statistics_by_id(match_id)
 
         if not api_response_dict or not api_response_dict.get("response"):
@@ -73,16 +74,23 @@ class FixtureStatisticsService:
             logger.error(f"Pydantic validation error for full statistics API response (match_id: {match_id}): {e.errors()}")
             return (0, 1) 
 
-        return await self._process_statistics_entries(db, match_id, raw_statistic_entries)
+        success_count, error_count, statistic_dicts_for_db = await self._process_statistics_entries(match_id, raw_statistic_entries)
+        if statistic_dicts_for_db:
+            try:
+                await statistic_repo.bulk_upsert_statistics(statistic_dicts_for_db) 
+                logger.info(f"Successfully attempted to upsert {len(statistic_dicts_for_db)} team statistics records for match_id {match_id}.")
+            except Exception as e:
+                logger.exception(f"Database error during statistics bulk upsert for match_id {match_id}: {e}")
+                error_count += len(statistic_dicts_for_db)
+                success_count -= len(statistic_dicts_for_db)
+
+        return success_count, error_count
 
     async def _process_statistics_entries(
         self,
-        db: AsyncSession,
         match_id_param: int,
         statistic_entries_from_api: List[SingleTeamStatisticDataFromAPI] 
-    ) -> Tuple[int, int]:
-
-        statistic_repo = FixtureStatisticsRepository(db)
+    ) -> Tuple[int, int, List[Dict[str, Any]]]:
 
         statistics_to_upsert_internal = []
         success_count = 0
@@ -116,12 +124,6 @@ class FixtureStatisticsService:
 
         if statistics_to_upsert_internal:
             statistic_dicts_for_db = [model.model_dump(exclude_unset=True) for model in statistics_to_upsert_internal]
-            try:
-                await statistic_repo.bulk_upsert_statistics(statistic_dicts_for_db) # متد فرضی
-                logger.info(f"Successfully attempted to upsert {len(statistic_dicts_for_db)} team statistics records for match_id {match_id_param}.")
-            except Exception as e:
-                logger.exception(f"Database error during statistics bulk upsert for match_id {match_id_param}: {e}")
-                error_count += len(statistic_dicts_for_db)
-                success_count -= len(statistic_dicts_for_db)
 
-        return (success_count, error_count)
+
+        return success_count, error_count, statistic_dicts_for_db

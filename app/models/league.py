@@ -1,9 +1,9 @@
 # app/models/league.py
+from __future__ import annotations
 from datetime import date, datetime
 from typing import Optional, List, TYPE_CHECKING
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import String, Integer, Boolean, Date, DateTime, ForeignKey, func
-from sqlalchemy import UniqueConstraint
+from sqlalchemy import String, Integer, Boolean, Date, DateTime, ForeignKey, func, UniqueConstraint
 from app.core.database import Base
 
 if TYPE_CHECKING:

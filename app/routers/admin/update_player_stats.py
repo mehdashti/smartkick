@@ -6,7 +6,13 @@ from pydantic import BaseModel
 from app.schemas.tasks import TaskQueueResponse
 from app.services.player_service import PlayerService
 from app.routers.dependencies import require_admin_user, get_async_db_session, AdminUser
-from app.tasks.player_stats_tasks import update_player_stats_for_league_season_task, update_player_stats_for_season_task, update_player_stats_for_league_task
+from app.tasks.player_stats_tasks import  (
+    update_fixture_player_stats_by_id_task,
+    update_player_stats_for_league_season_task,
+    update_player_stats_for_league_task,
+    update_player_stats_for_season_task,
+)
+
 
 logger = logging.getLogger(__name__)
 
@@ -113,3 +119,29 @@ async def update_stats_by_league(
             detail=f"Failed to queue background task: {e}",
         )
 
+@router.post(
+    "/update-by-match-id/{match_id}",
+    status_code=status.HTTP_202_ACCEPTED,  
+    response_model=TaskQueueResponse, 
+    summary="Queue Background Task to Update fixture Player Stats by Match ID",
+    description="Queues a background task to update fixture player stats.",
+)
+async def update_fixture_player_stats_by_id(
+    *,
+    admin_user: AdminUser,
+    match_id: int = Path(..., description="Match ID"),
+) -> TaskQueueResponse:
+    logger.info(f"Admin request from '{admin_user.username}': Queue fixture player stats update task for match id:{match_id}).")
+    try:
+        task_result = update_fixture_player_stats_by_id_task.apply_async(args=[match_id])
+        logger.info(f"Celery task queued with ID: {task_result.id} for fixture players stats.")
+        return TaskQueueResponse(
+            message=f"Players stats update task has been queued successfully.",
+            task_id=task_result.id,
+        )
+    except Exception as e:
+        logger.exception(f"Failed to queue Celery task for fixture player stats update. Error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to queue background task: {e}",
+        )

@@ -27,21 +27,32 @@ class EventsService:
         batch_size: int = settings.DEFAULT_DB_BATCH_SIZE
     ) -> Tuple[int, int]:
         logger.info(f"Updating fixture events for match={match_id}")
-
+        event_repo = EventsRepository(db)
+        
         api_result = await api_football.fetch_events_by_id(match_id)
 
-        response_list = api_result.get('response')
+        result = MatchEventApiResponse(**api_result) 
+        response_list = result.response
 
-        return await self._process_fixture_events_entry(db, match_id, response_list)
+        success_counts, error_counts, event_dicts_for_upsert = await self._process_fixture_events_entry(match_id, response_list)
+        
+        if event_dicts_for_upsert:
+            try:
+                await event_repo.bulk_upsert_events(event_dicts_for_upsert)
+                logger.info(f"Successfully attempted to upsert {len(event_dicts_for_upsert)} events for match_id {match_id}.")
+            except Exception as e:
+                logger.exception(f"Database error during event bulk upsert for match_id {match_id}: {e}")
+                error_counts += len(event_dicts_for_upsert) 
+                success_counts -= len(event_dicts_for_upsert)
+
+        return success_counts, error_counts
 
 
     async def _process_fixture_events_entry(
         self,
-        db: AsyncSession,
         match_id: int,
-        event_items_from_api: List[dict]  
-    ) -> Tuple[int, int]:
-        event_repo = EventsRepository(db)
+        event_items_from_api: List[SingleEventDataFromAPI]  
+    ) -> Tuple[int, int, List[Dict[str, Any]]]:
 
         events_to_create_internal = []
         success_count = 0
@@ -49,20 +60,19 @@ class EventsService:
 
         for event_data in event_items_from_api: 
             try:
-                validated_event_data = SingleEventDataFromAPI(**event_data)
                 create_data = MatchEventCreateInternal(
                     match_id=match_id,
-                    time_elapsed=validated_event_data.time.elapsed,
-                    time_extra=validated_event_data.time.extra,
-                    team_id=validated_event_data.team.id,
-                    team_name_snapshot=validated_event_data.team.name,
-                    player_id=validated_event_data.player.id,
-                    player_name_snapshot=validated_event_data.player.name,
-                    assist_player_id=validated_event_data.assist.id,
-                    assist_player_name_snapshot=validated_event_data.assist.name,
-                    event_type=validated_event_data.type,
-                    event_detail=validated_event_data.detail,
-                    comments=validated_event_data.comments
+                    time_elapsed=event_data.time.elapsed,
+                    time_extra=event_data.time.extra,
+                    team_id=event_data.team.id,
+                    team_name_snapshot=event_data.team.name,
+                    player_id=event_data.player.id,
+                    player_name_snapshot=event_data.player.name,
+                    assist_player_id=event_data.assist.id,
+                    assist_player_name_snapshot=event_data.assist.name,
+                    event_type=event_data.type,
+                    event_detail=event_data.detail,
+                    comments=event_data.comments
                 )
                 events_to_create_internal.append(create_data)
                 success_count += 1
@@ -72,15 +82,6 @@ class EventsService:
      
         if events_to_create_internal:
             event_dicts_for_db = [model.model_dump(exclude_unset=True) for model in events_to_create_internal]
-            try:
-                await event_repo.bulk_upsert_events(event_dicts_for_db)
-                logger.info(f"Successfully attempted to upsert {len(event_dicts_for_db)} events for match_id {match_id}.")
-            except Exception as e:
-                logger.exception(f"Database error during event bulk upsert for match_id {match_id}: {e}")
-                error_count += len(event_dicts_for_db) 
-                success_count -= len(event_dicts_for_db)
 
-        return success_count, error_count
-
-
+        return success_count, error_count, event_dicts_for_db
 

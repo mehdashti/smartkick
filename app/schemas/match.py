@@ -3,11 +3,23 @@ from typing import Optional, List, Dict, Any, TYPE_CHECKING
 from datetime import datetime
 from pydantic.alias_generators import to_camel
 from enum import Enum
+from app.schemas.match_lineups import MatchLineupCreateInternal
+from app.schemas.match_lineups import SingleTeamLineupDataFromAPI 
+from app.schemas.match_event import SingleEventDataFromAPI
+from app.schemas.match_event import MatchEventCreateInternal 
+from app.schemas.match_team_statistic import MatchTeamStatisticCreateInternal
+from app.schemas.match_team_statistic import SingleTeamStatisticDataFromAPI 
+from app.schemas.player_fixture_stats import PlayerFixtureStatsCreateInternal
+from app.schemas.player_fixture_stats import StatsTeamInfoForFixtureAPI
+from app.schemas.player_fixture_stats import TeamPlayersStatsInFixtureAPI
+
+
 
 if TYPE_CHECKING:
     from app.schemas.team import TeamOut
     from app.schemas.venue import VenueOut
     from app.schemas.league import LeagueOut
+
 
 class APIModel(BaseModel):
     """Base model with common config for all schemas"""
@@ -106,6 +118,10 @@ class MatchAPIInputData(APIModel):
     teams: TeamsAPIData
     goals: GoalsAPIData
     score: ScoreBreakdownSchema
+    events: Optional[List[SingleEventDataFromAPI]] = Field(default_factory=list) 
+    lineups: Optional[List[SingleTeamLineupDataFromAPI]] = Field(default_factory=list) 
+    statistics: Optional[List[SingleTeamStatisticDataFromAPI]] = Field(default_factory=list) 
+    players: Optional[List[TeamPlayersStatsInFixtureAPI]] = Field(default_factory=list) 
 
 # --- Internal Create/Update Schemas ---
 class MatchCreateInternal(APIModel):
@@ -131,8 +147,14 @@ class MatchCreateInternal(APIModel):
     score_penalty_home: Optional[int] = Field(None)
     score_penalty_away: Optional[int] = Field(None)
     round: Optional[str] = Field(None)
+    winner_home: Optional[bool] = Field(None, description="Whether home team won")
+    winner_away: Optional[bool] = Field(None, description="Whether away team won")
     season: int = Field(..., description="Season year")
-    
+    events_json: Optional[List[Dict[str, Any]]] = None
+    lineups_json: Optional[List[Dict[str, Any]]] = None
+    team_stats_json: Optional[List[Dict[str, Any]]] = None
+    player_stats_json: Optional[List[Dict[str, Any]]] = None
+
     # Foreign keys
     venue_id: Optional[int] = Field(None)
     league_id: int = Field(...)
@@ -190,9 +212,16 @@ class MatchOut(APIModel):
     season: int = Field(..., description="Season year")
     created_at: datetime = Field(...)
     updated_at: datetime = Field(...)
-    lineups: Optional[List["MatchLineupOut"]] = Field(None, description="Lineups for this match")
-    
-    # Relationships
+#    events: Optional[MatchEventsJsonPayload] = None
+#    lineups: Optional[MatchLineupsJsonPayload] = None
+#    team_stats: Optional[MatchTeamStatsJsonPayload] = None
+#    player_stats: Optional[GroupedMatchPlayerStatsJsonPayload] = None    
+
+    events: Optional[List[Dict[str, Any]]] = Field(default_factory=list, alias="events")
+    lineups: Optional[List[Dict[str, Any]]] = Field(default_factory=list, alias="lineups")
+    team_stats: Optional[List[Dict[str, Any]]] = Field(default_factory=list, alias="team_stats")
+    player_stats: Optional[List[Dict[str, Any]]] = Field(default_factory=list, alias="player_stats")
+ 
     venue: Optional["VenueOut"] = Field(None)
     home_team: "TeamOut" = Field(...)
     away_team: "TeamOut" = Field(...)
@@ -209,6 +238,10 @@ class MatchApiResponseItem(APIModel):
     teams: TeamsAPIData
     goals: GoalsAPIData
     score: ScoreBreakdownSchema
+    events: Optional[List[SingleEventDataFromAPI]] = Field(default_factory=list) 
+    lineups: Optional[List[SingleTeamLineupDataFromAPI]] = Field(default_factory=list) 
+    statistics: Optional[List[SingleTeamStatisticDataFromAPI]] = Field(default_factory=list) 
+    players: Optional[List[TeamPlayersStatsInFixtureAPI]] = Field(default_factory=list) 
 
 class MatchApiResponse(APIModel):
     get: str = Field(..., description="Endpoint name")
@@ -218,6 +251,4 @@ class MatchApiResponse(APIModel):
     paging: Dict[str, int] = Field(..., description="Pagination info")
     response: List[MatchApiResponseItem]
 
-# حلقه‌های ارجاعی
-#MatchOut.model_rebuild()
-#MatchApiResponseItem.model_rebuild()
+

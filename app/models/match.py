@@ -1,8 +1,10 @@
 # app/models/match.py
+from __future__ import annotations
 from datetime import datetime
-from typing import Optional, List, TYPE_CHECKING
+from typing import Optional, List, TYPE_CHECKING, Dict, Any
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import Integer, String, Boolean, ForeignKey, DateTime, func, JSON
+from sqlalchemy.dialects.postgresql import JSONB
 from app.core.database import Base
 
 if TYPE_CHECKING:
@@ -11,6 +13,7 @@ if TYPE_CHECKING:
     from app.models.league import League
     from app.models.match_lineup import MatchLineup
     from app.models.match_event import MatchEvent
+    from app.models.player_fixture_stats import PlayerFixtureStats
 
 class Match(Base):
     __tablename__ = "matches"
@@ -60,6 +63,12 @@ class Match(Base):
         index=True
     )
 
+    # JSONB Columns
+    events_json: Mapped[Optional[List[Dict[str, Any]]]] = mapped_column(JSONB, nullable=True, default=list)
+    lineups_json: Mapped[Optional[List[Dict[str, Any]]]] = mapped_column(JSONB, nullable=True, default=list)
+    team_stats_json: Mapped[Optional[List[Dict[str, Any]]]] = mapped_column(JSONB, nullable=True, default=list) 
+    player_stats_json: Mapped[Optional[List[Dict[str, Any]]]] = mapped_column(JSONB, nullable=True, default=list)
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -97,6 +106,11 @@ class Match(Base):
         lazy="noload",
         cascade="all, delete-orphan" # Optional: if a Match is deleted, delete its events
     )
+    player_stats: Mapped[List[PlayerFixtureStats]] = relationship(
+        back_populates="match", 
+        cascade="all, delete-orphan",
+        lazy="noload" 
+    )    
 
     def __repr__(self) -> str:
         return f"<Match(match_id={self.match_id}, home={self.home_team_id}, away={self.away_team_id}, date='{self.date}')>"

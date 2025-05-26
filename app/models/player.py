@@ -1,4 +1,5 @@
 # app/models/player.py
+from __future__ import annotations
 from datetime import date, datetime
 from typing import Optional, List, TYPE_CHECKING
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -9,6 +10,7 @@ from app.core.database import Base
 if TYPE_CHECKING:
     from app.models.player_season_stats import PlayerSeasonStats  
     from app.models.match_event import MatchEvent
+    from app.models.player_fixture_stats import PlayerFixtureStats
 
 class Player(Base):
     __tablename__ = 'players'
@@ -48,6 +50,11 @@ class Player(Base):
         back_populates="assist_player",
         lazy="noload"
     )
+    fixture_stats: Mapped[List[PlayerFixtureStats]] = relationship(
+        back_populates="player",
+        cascade="all, delete-orphan", 
+        lazy="noload" 
+    )    
 
 
     def __repr__(self) -> str:

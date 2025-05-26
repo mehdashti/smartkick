@@ -1,4 +1,5 @@
 # app/models/player_season_stats.py
+from __future__ import annotations
 from sqlalchemy import (Column, Integer, String, Boolean, Float, ForeignKey,
                       DateTime, UniqueConstraint, Index)
 from sqlalchemy.orm import relationship 

@@ -1,4 +1,5 @@
 # app/models/match_team_statistic.py
+from __future__ import annotations
 from datetime import datetime
 from typing import Optional, Any, Dict, List, TYPE_CHECKING
 from sqlalchemy.orm import Mapped, mapped_column, relationship

@@ -1,4 +1,5 @@
 # app/models/timezone.py
+from __future__ import annotations
 from datetime import datetime
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import Integer, String, DateTime, func

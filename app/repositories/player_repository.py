@@ -27,6 +27,12 @@ class PlayerRepository:
         result = await self.db.execute(stmt)
         return result.scalars().all()
 
+    async def get_all_players_ids(self) -> List[int]:
+        """Fetch all player IDs."""
+        stmt = select(DBPlayer.id)
+        result = await self.db.execute(stmt)
+        return [row[0] for row in result.fetchall()]
+
     async def upsert_player(self, player_data: Dict[str, Any]) -> None:
         """
         Upsert a single player by ID and return the object.
