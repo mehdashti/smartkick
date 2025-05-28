@@ -1,12 +1,13 @@
 # ثبت تسک‌ها در Celery
-from .player_tasks import *  # ایمپورت تمام تسک‌های مربوط به بازیکنان
-from .team_tasks import *  # ثبت تسک‌های مربوط به تیم‌ها
-from .venue_tasks import *  # ثبت تسک‌های مربوط به ورزشگاه‌ها
-from .country_tasks import *  # ثبت تسک‌های مربوط به کشور‌ها
+from .player_tasks import *  
+from .team_tasks import *  
+from .venue_tasks import * 
+from .country_tasks import *  
 from .timezone_tasks import *  
-from .league_tasks import *  # ثبت تسک‌های مربوط به لیگ‌ها 
-from .player_stats_tasks import *  # ثبت تسک‌های مربوط به آمار بازیکنان
-from .fixture_tasks import *  # ثبت تسک‌های مربوط به مسابقات
-from .lineups_tasks import *  # ثبت تسک‌های مربوط به ترکیب‌ها
-from .events_tasks import *  # ثبت تسک‌های مربوط به رویدادها
-from .fixture_statistics_tasks import *  # ثبت تسک‌های مربوط به آمار مسابقات
+from .league_tasks import * 
+from .player_stats_tasks import * 
+from .fixture_tasks import * 
+from .lineups_tasks import *  
+from .events_tasks import * 
+from .fixture_statistics_tasks import * 
+from .coach_tasks import * 

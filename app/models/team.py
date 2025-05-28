@@ -5,14 +5,18 @@ from typing import Optional, List, TYPE_CHECKING
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import Integer, String, Boolean, ForeignKey, DateTime, func
 from app.core.database import Base
+from app.models.coach import Coach
+from app.models.coach_careers import CoachCareers
+from app.models.player_season_stats import PlayerSeasonStats  
+from app.models.match import Match
 
 if TYPE_CHECKING:
     from app.models.country import Country
     from app.models.venue import Venue
-    from app.models.player_season_stats import PlayerSeasonStats  
-    from app.models.match import Match
+
     from app.models.match_lineup import MatchLineup
     from app.models.player_fixture_stats import PlayerFixtureStats
+
 
 class Team(Base):
     __tablename__ = "teams"
@@ -75,6 +79,19 @@ class Team(Base):
         cascade="all, delete-orphan", 
         lazy="noload" 
     )
+    coach: Mapped[List["Coach"]] = relationship(
+        back_populates="team",  # <<<--- این باید با نام ویژگی در Coach که به Team اشاره دارد، مطابقت داشته باشد
+        lazy="noload",
+        cascade="all, delete-orphan",
+        foreign_keys="[Coach.team_id]"
+    )
+    coach_careers: Mapped[List["CoachCareers"]] = relationship(
+        back_populates="team", # <<<--- این باید با نام ویژگی در CoachCareers که به Team اشاره دارد، مطابقت داشته باشد
+        lazy="noload",
+        cascade="all, delete-orphan",
+        foreign_keys="[CoachCareers.team_id]"
+    )
+
 
     def __repr__(self) -> str:
         return f"<Team(team_id={self.team_id}, name='{self.name}', country='{self.country}')>"

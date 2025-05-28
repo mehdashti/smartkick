@@ -116,6 +116,11 @@ from .player_season_stats import (
     PlayerStatsApiResponse
 )
 
+from .coach import (
+    CoachBase, CoachApiResponse, CoachCreateInternal,
+    CoachApiResponseItem, CoachCareers, TeamData,
+    CoachBirthData, CoachUpdate, CoachOut
+)
 
 # 2. Call model_rebuild() for all models that use forward references
 # or are part of a circular dependency.

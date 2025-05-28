@@ -18,6 +18,8 @@ from .match_lineup import MatchLineup
 from .match_event import MatchEvent
 from .match_team_statistic import MatchTeamStatistic
 from .player_fixture_stats import PlayerFixtureStats
+from .coach import Coach
+
 
     # <--- مثال: سایر مدل ها
 #from .player import Player   # <--- مثال: سایر مدل ها

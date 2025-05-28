@@ -14,6 +14,7 @@ from app.routers.admin import update_players as admin_players_router
 from app.routers.admin import update_player_stats as admin_player_stats_router
 from app.routers.admin import update_fixtures as update_fixtures_router
 from app.routers.admin import task_status as task_status_router
+from app.routers.admin import update_coaches as update_coaches_router
 
 # --- روتر احراز هویت ---
 from app.routers import auth # <--- وارد کردن روتر auth
@@ -51,6 +52,7 @@ app.include_router(admin_players_router.router)
 app.include_router(admin_player_stats_router.router)
 app.include_router(task_status_router.router)
 app.include_router(update_fixtures_router.router)
+app.include_router(update_coaches_router.router)
 
 
 # 4. روترهای عمومی (اگر دارید)

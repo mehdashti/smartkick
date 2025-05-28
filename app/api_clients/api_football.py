@@ -770,3 +770,26 @@ async def fetch_fixture_player_stats(match_id: int) -> List[Dict[str, Any]]:
     except Exception as e:
         logger.exception(f"Unexpected error fetching fixture player stats for id={match_id}: {e}")
         raise ConnectionError(f"Unexpected error connecting to API for fixture player stats by id: {e}") from e
+
+
+async def fetch_coach_by_id(external_coach_id: int) -> Optional[List[Dict[str, Any]]]:
+
+    endpoint = "/coachs"
+    params = {"id": str(external_coach_id)}
+    logger.info(f"Fetching coach from external API for external_id={external_coach_id}")
+    try:
+        data = await _make_api_request("GET", endpoint, params=params)
+
+        if data.get("errors") and (isinstance(data["errors"], list) and data["errors"] or isinstance(data["errors"], dict) and data["errors"]):
+            logger.error(f"API reported errors fetching coach for id={external_coach_id}: {data['errors']}")
+            return None 
+
+        return data
+
+    except (ValueError, ConnectionError, TimeoutError) as api_error:
+        logger.error(f"API Error fetching coach for id={external_coach_id}: {api_error}", exc_info=True)
+        raise api_error
+    except Exception as e:
+        logger.exception(f"Unexpected error fetching coach for id={external_coach_id}: {e}")
+        raise ConnectionError(f"Unexpected error connecting to API for coach by id: {e}") from e
+    

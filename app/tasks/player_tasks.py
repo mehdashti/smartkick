@@ -1,3 +1,4 @@
+# app/tasks/player_tasks.py
 from celery import shared_task
 from app.services.player_service import PlayerService
 from app.core.database import async_session

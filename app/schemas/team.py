@@ -8,6 +8,10 @@ if TYPE_CHECKING:
     from app.schemas.country import CountryOut
     from app.schemas.league import LeagueOut
     from app.schemas.venue import VenueOut
+    from app.schemas.match_lineup import MatchLineupOut
+    from app.schemas.coach import CoachOut
+    from app.schemas.player import PlayerOut
+    from app.schemas.coach_careers import CoachCareersOut
 
 class APIModel(BaseModel):
     """Base model with common config for all schemas"""
