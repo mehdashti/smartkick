@@ -12,6 +12,7 @@ services:
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
       - ./rabbitmq-init.sh:/rabbitmq-init.sh
+      - ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf 
     entrypoint: ["/bin/sh", "-c", "chmod +x /rabbitmq-init.sh && /rabbitmq-init.sh"]
     healthcheck:
       test: ["CMD", "rabbitmqctl", "status"]
@@ -50,6 +51,7 @@ services:
       POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
       POSTGRES_DB: ${DATABASE_NAME}
       POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+      PGTZ: 'UTC'
     ports:
       - "5433:5432"
     healthcheck:
@@ -69,6 +71,8 @@ services:
       - "8001:8000"
     volumes:
       - .:/app
+    environment:
+      - TZ=UTC
     env_file:
       - .env
     depends_on:
@@ -86,6 +90,7 @@ services:
     container_name: smartkick-flower
     restart: unless-stopped
     environment:
+      - TZ=UTC
       - CELERY_BROKER_URL=amqp://guest:guest@smartkick-rabbitmq:5672/smartkick
       - FLOWER_BROKER_API=http://guest:guest@smartkick-rabbitmq:15672/api/
       - FLOWER_PORT=5555
@@ -101,16 +106,26 @@ services:
         condition: service_started
     networks:
       - smartkick-net
-
   worker:
     build: .
     container_name: smartkick-worker
     restart: unless-stopped
-    command: celery -A app.core.celery_app worker --pool=solo -l info -E
+    # <<< تغییر کلیدی در command >>>
+    command: celery -A app.core.celery_app.celery_app worker -P gevent -c 500 -l info -E
+    # توضیح:
+    # -A app.core.celery_app.celery_app: مطمئن شوید مسیر به نمونه Celery شما صحیح است.
+    #   اگر celery_app نمونه‌ای از Celery در فایل app/core/celery_app.py است، این صحیح است.
+    # -P gevent: استفاده از gevent به عنوان pool.
+    # -c 500: تعداد greenlet های همزمان. این مقدار را می‌توانید بر اساس منابع و بار تنظیم کنید.
+    #         برای کارهای I/O-bound، این عدد می‌تواند بالا باشد.
     volumes:
       - .:/app
     env_file:
       - .env
+    environment:
+      - TZ=UTC
+      # <<< مهم: اضافه کردن وابستگی‌های gevent/eventlet به کانتینر >>>
+      # شما باید gevent (یا eventlet) را در Dockerfile یا requirements.txt خود نصب کنید.
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -130,6 +145,8 @@ services:
       - .:/app
     env_file:
       - .env
+    environment:
+      - TZ=UTC
     depends_on:
       rabbitmq:
         condition: service_healthy

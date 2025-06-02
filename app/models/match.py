@@ -14,6 +14,8 @@ if TYPE_CHECKING:
     from app.models.match_lineup import MatchLineup
     from app.models.match_event import MatchEvent
     from app.models.player_fixture_stats import PlayerFixtureStats
+    from app.models.injury import Injury
+
 
 class Match(Base):
     __tablename__ = "matches"
@@ -111,6 +113,11 @@ class Match(Base):
         cascade="all, delete-orphan",
         lazy="noload" 
     )    
+    injuries: Mapped[List["Injury"]] = relationship(
+        back_populates="match",
+        lazy="noload"
+    )
+
 
     def __repr__(self) -> str:
         return f"<Match(match_id={self.match_id}, home={self.home_team_id}, away={self.away_team_id}, date='{self.date}')>"

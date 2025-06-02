@@ -122,6 +122,13 @@ from .coach import (
     CoachBirthData, CoachUpdate, CoachOut
 )
 
+from .injury import (
+    InjuryBase, InjuryCreateInternal,
+    InjuryApiResponseItem, InjuryOut, InjuryApiResponse,
+    InjuryUpdateInternal, PlayerInjuryData, TeamData,
+    FixtureData, LeagueData
+)
+
 # 2. Call model_rebuild() for all models that use forward references
 # or are part of a circular dependency.
 # Pydantic V2 is generally good at detecting when a rebuild is needed,

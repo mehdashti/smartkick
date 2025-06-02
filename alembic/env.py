@@ -22,6 +22,14 @@ import app.models.team
 import app.models.venue
 import app.models.player
 import app.models.player_season_stats
+import app.models.match
+import app.models.match_lineup
+import app.models.match_event
+import app.models.match_team_statistic
+import app.models.player_fixture_stats
+import app.models.coach
+import app.models.coach_careers
+import app.models.injury
 import app.models.user # مدل User را هم اضافه کنیم اگر وجود دارد
 # -------------------------------------------------------
 

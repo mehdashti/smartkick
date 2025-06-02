@@ -2,13 +2,19 @@
 import httpx
 from typing import List, Dict, Any, Optional
 from app.core.config import settings
+# فرض بر این است که redis_client یک نمونه از redis.asyncio.Redis است
+# مثال:
+# import redis.asyncio as redis
+# redis_client = redis.from_url(settings.REDIS_URL, decode_responses=True)
+from app.core.redis import redis_client # مطمئن شوید این یک کلاینت ناهمگام است
 import logging
-import asyncio 
-import time    
-import collections 
+import asyncio
+import random
+# از قفل ناهمگام redis-py استفاده کنید (برای نسخه >= 4.2)
+from redis.asyncio.lock import Lock as AsyncLock # تغییر نام به AsyncLock برای وضوح
+import redis.exceptions # برای مدیریت خطاهای قفل
 
 logger = logging.getLogger(__name__)
-
 
 BASE_URL = f"https://{settings.API_FOOTBALL_HOST}"
 HEADERS = {
@@ -17,40 +23,100 @@ HEADERS = {
 }
 DEFAULT_TIMEOUT = 15.0
 
-# --- Rate Limiting State ---
-_REQUEST_TIMESTAMPS = collections.deque()
-_RATE_LIMIT_LOCK = asyncio.Lock()
-# خواندن مقادیر از تنظیمات (مطمئن شوید این مقادیر در settings.py تعریف شده‌اند)
-_MAX_REQUESTS = getattr(settings, 'API_FOOTBALL_MAX_REQUESTS_PER_MINUTE', 30) # مثال: 30 درخواست
-_PERIOD_SECONDS = getattr(settings, 'API_FOOTBALL_RATE_LIMIT_PERIOD_SECONDS', 60.0) # مثال: 60 ثانیه
+# --- Rate Limiting Settings ---
+# استفاده مستقیم از متغیرهای settings برای خوانایی بهتر
+_RATE_LIMIT_KEY = "api_football:rate_limit"
+_LOCK_NAME = "api_football:lock"
 
-async def _wait_for_rate_limit():
-    """Checks and waits for the rate limit if necessary before making a request."""
-    async with _RATE_LIMIT_LOCK:
-        while True:
-            now = time.monotonic()
-            # Remove timestamps older than the period
-            while _REQUEST_TIMESTAMPS and (now - _REQUEST_TIMESTAMPS[0] > _PERIOD_SECONDS):
-                _REQUEST_TIMESTAMPS.popleft()
+async def _wait_for_rate_limit_async(): # تغییر نام و تبدیل به async
+    """Checks and waits for the rate limit using Redis before making a request (async version)."""
+    max_attempts_loop = 15  # تعداد تلاش برای گرفتن اسلات در حلقه اصلی
+    lock_acquire_timeout = 0.2  # حداکثر زمان انتظار برای به دست آوردن قفل (ثانیه)
+    lock_instance_timeout = 10  # حداکثر زمانی که قفل نگه داشته می‌شود (ثانیه) - باید بیشتر از عملیات Redis باشد
 
-            if len(_REQUEST_TIMESTAMPS) < _MAX_REQUESTS:
-                _REQUEST_TIMESTAMPS.append(now)
-                logger.debug(f"Rate limit check passed. Current count: {len(_REQUEST_TIMESTAMPS)}/{_MAX_REQUESTS}")
-                break # Exit the loop, request can proceed
-            else:
-                # Calculate wait time until the oldest request expires
-                oldest_request_time = _REQUEST_TIMESTAMPS[0]
-                wait_time = (_PERIOD_SECONDS - (now - oldest_request_time)) + 0.1 # Add a small buffer
-                wait_time = max(0, wait_time) # Ensure wait_time is not negative
+    # زمان انتظار اولیه، در صورت عدم موفقیت در کسب قفل یا رسیدن به محدودیت، افزایش می‌یابد
+    current_retry_wait = 0.1
 
-                logger.warning(
-                    f"Rate limit reached ({len(_REQUEST_TIMESTAMPS)}/{_MAX_REQUESTS} in last {_PERIOD_SECONDS}s). "
-                    f"Waiting for {wait_time:.2f} seconds."
-                )
-                # Keep the lock while sleeping to prevent other tasks from immediately
-                # hitting the limit again. This serializes the waiting tasks.
-                await asyncio.sleep(wait_time)
-                # Loop continues to re-evaluate after waking up
+    for attempt in range(max_attempts_loop):
+        slot_acquired_this_iteration = False
+        calculated_sleep_if_limited = 1.0 # زمان پیش‌فرض انتظار اگر به محدودیت برسیم
+
+        try:
+            async with AsyncLock(redis_client, _LOCK_NAME, timeout=lock_instance_timeout, blocking_timeout=lock_acquire_timeout):
+                # قفل با موفقیت به دست آمد
+                pipe = redis_client.pipeline()
+                pipe.get(_RATE_LIMIT_KEY)
+                pipe.ttl(_RATE_LIMIT_KEY)
+                current_requests_str, ttl_seconds = await pipe.execute()
+
+                current_requests = int(current_requests_str or 0)
+                # ttl: -2 اگر کلید وجود نداشته باشد، -1 اگر کلید وجود داشته باشد ولی تاریخ انقضا نداشته باشد
+                ttl = int(ttl_seconds or -2)
+
+                # بررسی و اصلاح وضعیت‌های نامعتبر
+                if ttl == -2 and current_requests > 0: # شمارنده وجود دارد ولی کلید منقضی شده/حذف شده
+                    logger.warning(f"Rate limit key {_RATE_LIMIT_KEY} had count {current_requests} but was missing/expired. Resetting count.")
+                    # این حالت نباید رخ دهد اگر expire به درستی ست شود، اما برای اطمینان
+                    await redis_client.set(_RATE_LIMIT_KEY, 0, ex=settings.API_FOOTBALL_RATE_LIMIT_PERIOD_SECONDS)
+                    current_requests = 0
+                    ttl = settings.API_FOOTBALL_RATE_LIMIT_PERIOD_SECONDS
+                elif ttl == -1 and current_requests > 0: # شمارنده وجود دارد ولی تاریخ انقضا ندارد
+                    logger.warning(f"Rate limit key {_RATE_LIMIT_KEY} was permanent. Setting expiry {settings.API_FOOTBALL_RATE_LIMIT_PERIOD_SECONDS}s.")
+                    await redis_client.expire(_RATE_LIMIT_KEY, settings.API_FOOTBALL_RATE_LIMIT_PERIOD_SECONDS)
+                    ttl = settings.API_FOOTBALL_RATE_LIMIT_PERIOD_SECONDS
+                elif ttl == 0 : # کلید همین الان منقضی شده
+                    current_requests = 0
+
+
+                if current_requests < settings.API_FOOTBALL_MAX_REQUESTS_PER_MINUTE:
+                    # می‌توانیم درخواست ارسال کنیم
+                    p_incr = redis_client.pipeline()
+                    p_incr.incr(_RATE_LIMIT_KEY)
+                    # همیشه تاریخ انقضا را تنظیم/به‌روزرسانی می‌کنیم
+                    # اگر INCR کلید را ایجاد کند، EXPIRE آن را تنظیم می‌کند. اگر کلید وجود داشته باشد، EXPIRE آن را به‌روزرسانی می‌کند.
+                    p_incr.expire(_RATE_LIMIT_KEY, settings.API_FOOTBALL_RATE_LIMIT_PERIOD_SECONDS)
+                    new_count_results = await p_incr.execute()
+                    new_count = new_count_results[0] # INCR نتیجه را در یک لیست برمی‌گرداند
+
+                    logger.debug(f"Rate limit slot acquired. Current count: {new_count}/{settings.API_FOOTBALL_MAX_REQUESTS_PER_MINUTE}")
+                    slot_acquired_this_iteration = True
+                else:
+                    # به محدودیت نرخ رسیده‌ایم
+                    logger.warning(
+                        f"Rate limit reached ({current_requests}/{settings.API_FOOTBALL_MAX_REQUESTS_PER_MINUTE}). "
+                        f"TTL: {ttl if ttl > 0 else settings.API_FOOTBALL_RATE_LIMIT_PERIOD_SECONDS}s."
+                    )
+                    if ttl > 0:
+                        # اگر TTL معتبر است، حداقل به اندازه آن یا بخشی از آن صبر می‌کنیم
+                        calculated_sleep_if_limited = max(0.2, min(float(ttl), 5.0)) # حداکثر 5 ثانیه یا TTL صبر کن
+                    else: # TTL نامعتبر است (منفی) یا 0
+                        # این یعنی پنجره باید ریست شده باشد. یک انتظار کوتاه اعمال می‌کنیم.
+                        calculated_sleep_if_limited = 0.5
+            # قفل در اینجا آزاد می‌شود (با خروج از بلاک 'with')
+
+            if slot_acquired_this_iteration:
+                return True # موفقیت‌آمیز
+
+            # اگر اسلات در دسترس نبود (محدودیت نرخ)، به مدت calculated_sleep_if_limited صبر می‌کنیم
+            logger.info(f"Rate limit active or lock contention. Sleeping for {calculated_sleep_if_limited:.2f}s before retrying.")
+            await asyncio.sleep(calculated_sleep_if_limited + random.uniform(0, 0.1)) # jitter اضافه می‌کنیم
+            current_retry_wait = min(current_retry_wait * 1.5, 5.0) # افزایش زمان انتظار برای تلاش بعدی
+
+        except redis.exceptions.LockError: # یا TimeoutError اگر blocking_timeout در AsyncLock منقضی شود
+            logger.warning(f"Attempt {attempt + 1}: Could not acquire Redis lock for rate limiting. Retrying after {current_retry_wait:.2f}s.")
+            await asyncio.sleep(current_retry_wait + random.uniform(0, 0.05))
+            current_retry_wait = min(current_retry_wait * 1.5, 3.0)  # افزایش زمان انتظار برای قفل
+        except redis.RedisError as e:
+            logger.error(f"Attempt {attempt + 1}: Redis error during rate limiting: {e}. Retrying after {current_retry_wait:.2f}s.")
+            await asyncio.sleep(current_retry_wait + random.uniform(0, 0.1))
+            current_retry_wait = min(current_retry_wait * 1.5, 10.0) # افزایش زمان انتظار برای خطاهای Redis
+        except Exception as e:
+            logger.exception(f"Attempt {attempt + 1}: Unexpected error in rate limiting: {e}. Retrying after {current_retry_wait:.2f}s.")
+            await asyncio.sleep(current_retry_wait + random.uniform(0, 0.1))
+            current_retry_wait = min(current_retry_wait * 1.5, 10.0)
+
+    logger.error("Failed to pass rate limit check after maximum attempts.")
+    return False
 
 async def _make_api_request(
     method: str,
@@ -58,80 +124,104 @@ async def _make_api_request(
     params: Optional[Dict[str, Any]] = None,
     expected_status: int = 200
 ) -> Dict[str, Any]:
-    """Makes a rate-limited request to the API-Football endpoint."""
-
-    # --- Wait for rate limit before making the request ---
-    await _wait_for_rate_limit()
-    # -----------------------------------------------------
-
+    """Makes a rate-limited request to the API-Football endpoint (async version)."""
+    max_retries = 5
+    base_retry_delay = 1.0  # زمان تاخیر پایه برای تلاش مجدد
     url = f"{BASE_URL}{endpoint}"
-    # Use a shared client instance if possible for performance (connection pooling)
-    # If not shared, create it here:
-    async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
-        try:
-            logger.debug(f"Sending API request: {method} {url} Params: {params}")
-            response = await client.request(
-                method=method,
-                url=url,
-                headers=HEADERS,
-                params=params,
-                # timeout=DEFAULT_TIMEOUT # Timeout is set on the client now
-            )
 
-            # Check for specific rate limit status code (e.g., 429) if the API uses it
-            if response.status_code == 429:
-                 # You might want to handle this more gracefully, perhaps by retrying
-                 # after the duration specified in Retry-After header, if available.
-                 # For now, we treat it like other unexpected statuses.
-                 logger.error(f"API Error: Rate limit explicitly hit (429 Too Many Requests) from {url}. Body: {response.text[:500]}")
-                 # Raising ValueError might not be ideal, maybe a custom exception?
-                 raise ValueError(f"API Error: Rate limit explicitly hit (429) from {url}.")
+    for attempt in range(max_retries):
+        # بررسی محدودیت نرخ به صورت ناهمگام
+        if not await _wait_for_rate_limit_async(): # <<< تغییر کلیدی: فراخوانی نسخه async
+            # اگر _wait_for_rate_limit_async پس از چندین تلاش ناموفق بود،
+            # در اینجا یک خطا ایجاد می‌کنیم یا پس از یک تاخیر طولانی‌تر دوباره تلاش می‌کنیم.
+            # در حال حاضر، فرض بر این است که اگر false برگرداند، باید درخواست را متوقف کنیم.
+            logger.error(f"Rate limit check failed definitively for {url}. Aborting request.")
+            raise ValueError(f"API Error: Failed to pass rate limit check for {url}.")
 
-
-            if response.status_code != expected_status:
-                 logger.error(f"API Error: Unexpected status code {response.status_code} from {url}. Body: {response.text[:500]}")
-                 # Consider raising a more specific error based on status code (e.g., 401, 403, 404)
-                 raise ValueError(f"API Error: Unexpected status code {response.status_code} from {url}.")
-
+        async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
             try:
-                data = response.json()
-                logger.debug(f"Received successful API response ({response.status_code}) from {url}")
-                return data
-            except ValueError as json_err:
-                 logger.error(f"API Error: Failed to decode JSON response from {url}. Status: {response.status_code}, Text: {response.text[:500]}")
-                 raise ValueError(f"API Error: Failed to decode JSON response from {url}.") from json_err
+                current_delay = base_retry_delay * (2 ** attempt) + random.uniform(0, 0.5) # Exponential backoff with jitter
 
-        except httpx.TimeoutException as e:
-             logger.error(f"API Error: Request to {url} timed out after {DEFAULT_TIMEOUT} seconds.")
-             raise TimeoutError(f"API Error: Request to {url} timed out.") from e
-        except httpx.RequestError as e:
-             # Includes connection errors, DNS errors, etc.
-             logger.error(f"API Error: Network error connecting to {url}. Error: {e}")
-             raise ConnectionError(f"API Error: Network error connecting to {url} ({type(e).__name__}).") from e
-        except ValueError as ve: # Catch the ValueErrors we raised
-             # Logged above, just re-raise
-             raise ve
-        except Exception as e:
-             # Catch-all for truly unexpected errors
-             logger.exception(f"API Error: Unexpected error during request to {url}: {e}")
-             # Re-raise as a standard exception or a custom API error
-             raise Exception(f"API Error: Unexpected error during request to {url}: {e}") from e
+                logger.debug(f"Sending API request (Attempt {attempt + 1}/{max_retries}): {method} {url} Params: {params}")
+                response = await client.request(
+                    method=method,
+                    url=url,
+                    headers=HEADERS,
+                    params=params
+                )
 
+                if response.status_code == 429: # Too Many Requests
+                    logger.warning(f"Received 429 Too Many Requests from {url}. Retrying after {current_delay:.2f} seconds.")
+                    # این کد وضعیت معمولاً به این معنی است که محدودیت نرخ خود API (نه محدودیت ما) فعال شده است.
+                    # شاید لازم باشد منطق _wait_for_rate_limit_async را بازبینی کنیم یا یک کلید جداگانه برای 429 داشته باشیم.
+                    # فعلا فقط صبر می‌کنیم و دوباره تلاش می‌کنیم.
+                    await asyncio.sleep(current_delay)
+                    continue
+
+                if response.status_code != expected_status:
+                    logger.error(f"API Error: Unexpected status code {response.status_code} from {url}. Body: {response.text[:500]}")
+                    # برای خطاهای خاص سرور (5xx) ممکن است بخواهیم دوباره تلاش کنیم
+                    if 500 <= response.status_code < 600 and attempt < max_retries - 1 :
+                        logger.info(f"Server error {response.status_code}. Retrying after {current_delay:.2f} seconds...")
+                        await asyncio.sleep(current_delay)
+                        continue
+                    raise ValueError(f"API Error: Unexpected status code {response.status_code} from {url}.")
+
+                try:
+                    data = response.json()
+                    # بررسی خطای محدودیت نرخ در بدنه پاسخ (برخی API ها این کار را می‌کنند)
+                    if isinstance(data, dict) and "message" in data and "Too many requests" in data["message"]:
+                         logger.warning(f"API rate limit message in response body from {url}. Retrying after {current_delay:.2f} seconds.")
+                         await asyncio.sleep(current_delay)
+                         continue
+                    # در کد شما بود: data.get("rateLimit") == "Too many requests..."
+                    # اگر این فرمت دقیق است، آن را نگه دارید.
+
+                    logger.debug(f"Received successful API response ({response.status_code}) from {url}")
+                    return data
+                except ValueError as json_err: # اگر پاسخ JSON نباشد
+                    logger.error(f"API Error: Failed to decode JSON response from {url}. Status: {response.status_code}, Text: {response.text[:500]}")
+                    raise ValueError(f"API Error: Failed to decode JSON response from {url}.") from json_err
+
+            except httpx.TimeoutException as e:
+                logger.error(f"API Error: Request to {url} timed out after {DEFAULT_TIMEOUT} seconds on attempt {attempt + 1}.") # <<< DEFAULT_TIMEOUT
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(current_delay)
+                    continue
+                raise TimeoutError(f"API Error: Request to {url} timed out after {max_retries} attempts.") from e
+            except httpx.RequestError as e: # خطاهای شبکه و اتصال
+                logger.error(f"API Error: Network error connecting to {url} on attempt {attempt + 1}. Error: {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(current_delay)
+                    continue
+                raise ConnectionError(f"API Error: Network error connecting to {url} ({e}) after {max_retries} attempts.") from e
+            # ValueError و Exception های عمومی‌تر در اینجا مدیریت نمی‌شوند تا در صورت بروز، به بالا منتشر شوند.
+
+        # تاخیر کوتاه بین درخواست‌ها (اختیاری، اگر API به آن نیاز دارد)
+        # await asyncio.sleep(0.2) # اگر _wait_for_rate_limit_async به درستی کار کند، این ممکن است لازم نباشد.
+
+    logger.error(f"Failed to make API request to {url} after {max_retries} retries.")
+    raise ValueError(f"API Error: Max retries exceeded for {url}.")
+
+
+async def fetch_coach_by_id(coach_id: int) -> Dict[str, Any]:
+    """Fetch coach data by ID from API-Football."""
+    endpoint = "/coachs"
+    params = {"id": coach_id}
+    return await _make_api_request("GET", endpoint, params=params)
 
 async def fetch_player_teams(player_id: int) -> Dict[str, Any]:
-
+    """Fetch player teams data from API-Football."""
     endpoint = "/players/teams"
     params = {"player": player_id}
-
     data = await _make_api_request("GET", endpoint, params=params)
-
+    
     response_list = data.get('response')
     if isinstance(response_list, list) and response_list:
-        return response_list[0] 
+        return response_list[0]
     else:
-
         raise LookupError(f"Player teams not found or invalid response for ID: {player_id}")
-
+    
 
 async def fetch_timezones_from_api() -> List[str]:
     endpoint = "/timezone"
@@ -793,3 +883,70 @@ async def fetch_coach_by_id(external_coach_id: int) -> Optional[List[Dict[str, A
         logger.exception(f"Unexpected error fetching coach for id={external_coach_id}: {e}")
         raise ConnectionError(f"Unexpected error connecting to API for coach by id: {e}") from e
     
+
+async def fetch_injuries_by_league_season(league_id: int, season: int) -> Optional[Dict[str, Any]]:
+    endpoint = "/injuries" 
+    params = {
+        "league": str(league_id),
+        "season": str(season)
+    }
+
+    logger.info(f"Fetching injuries from external API (League: {league_id}, Season: {season})")
+    try:
+        data = await _make_api_request("GET", endpoint, params=params)
+
+        if data.get("errors") and (isinstance(data["errors"], list) and data["errors"] or isinstance(data["errors"], dict) and data["errors"]):
+            logger.error(f"API reported errors fetching injuries (L:{league_id}, S:{season}): {data['errors']}")
+            if 'rateLimit' in str(data['errors']):
+                 raise TimeoutError("API Rate Limit Exceeded") 
+            return None
+
+        if 'response' not in data or not isinstance(data['response'], list):
+             logger.error(f"Invalid response structure for injuries (L:{league_id}, S:{season}): Response: {data}")
+             return None
+
+        return data 
+
+    except TimeoutError as te: 
+         logger.error(f"API Rate Limit likely exceeded (L:{league_id}, S:{season})")
+         raise te 
+    except (ConnectionError, TimeoutError) as api_error:
+        logger.error(f"API Error fetching injuries (L:{league_id}, S:{season}): {api_error}", exc_info=True)
+        raise api_error
+    except Exception as e:
+        logger.exception(f"Unexpected error fetching injuries (L:{league_id}, S:{season}): {e}")
+        raise ConnectionError(f"Unexpected error connecting to API for injuries: {e}") from e
+
+
+async def fetch_injuries_by_ids(injury_ids: List[int]) -> Optional[Dict[str, Any]]:
+    if not injury_ids:
+        logger.warning("fetch_injuries_by_ids called with an empty list of IDs.")
+        return None 
+    endpoint = "/injuries"
+    ids_str = '-'.join(map(str, injury_ids))
+    params = {"ids": ids_str}
+    logger.info(f"Fetching injuries from external API (ids: {ids_str})")
+    try:
+        data = await _make_api_request("GET", endpoint, params=params)
+
+        if data.get("errors") and (isinstance(data["errors"], list) and data["errors"] or isinstance(data["errors"], dict) and data["errors"]):
+            logger.error(f"API reported errors fetching injuries (ids: {ids_str}): {data['errors']}")
+            if 'rateLimit' in str(data['errors']):
+                 raise TimeoutError("API Rate Limit Exceeded") 
+            return None
+
+        if 'response' not in data or not isinstance(data['response'], list):
+             logger.error(f"Invalid response structure for injuries (ids: {ids_str}): Response: {data}")
+             return None
+
+        return data 
+
+    except TimeoutError as te: 
+         logger.error(f"API Rate Limit likely exceeded (ids: {ids_str})")
+         raise te 
+    except (ConnectionError, TimeoutError) as api_error:
+        logger.error(f"API Error fetching injuries (ids: {ids_str}): {api_error}", exc_info=True)
+        raise api_error
+    except Exception as e:
+        logger.exception(f"Unexpected error fetching injuries (ids: {ids_str}): {e}")
+        raise ConnectionError(f"Unexpected error connecting to API for injuries: {e}") from e

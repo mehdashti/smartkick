@@ -11,3 +11,4 @@ from .lineups_tasks import *
 from .events_tasks import * 
 from .fixture_statistics_tasks import * 
 from .coach_tasks import * 
+from .injury_tasks import *

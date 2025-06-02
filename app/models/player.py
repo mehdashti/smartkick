@@ -11,6 +11,9 @@ if TYPE_CHECKING:
     from app.models.player_season_stats import PlayerSeasonStats  
     from app.models.match_event import MatchEvent
     from app.models.player_fixture_stats import PlayerFixtureStats
+    from app.models.injury import Injury
+    from app.models.player_sidelined import PlayerSidelined
+
 
 class Player(Base):
     __tablename__ = 'players'
@@ -54,7 +57,15 @@ class Player(Base):
         back_populates="player",
         cascade="all, delete-orphan", 
         lazy="noload" 
-    )    
+    ) 
+    injuries: Mapped[List["Injury"]] = relationship(
+        back_populates="player",
+        lazy="noload"
+    )   
+    sidelined: Mapped[List["PlayerSidelined"]] = relationship(
+        back_populates="player_sidelined",
+        lazy="noload"
+    )   
 
 
     def __repr__(self) -> str:

@@ -19,6 +19,13 @@ from .match_event import MatchEvent
 from .match_team_statistic import MatchTeamStatistic
 from .player_fixture_stats import PlayerFixtureStats
 from .coach import Coach
+from .coach_careers import CoachCareers
+from .injury import Injury
+from .player_sidelined import PlayerSidelined
+
+
+
+
 
 
     # <--- مثال: سایر مدل ها

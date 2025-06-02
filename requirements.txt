@@ -13,8 +13,8 @@ alembic>=1.13.1
 # استفاده از آخرین نسخه پایدار celery سری 5.x
 celery[asyncio,redis]>=5.5.2
 #celery[redis]==5.4.0 
-#redis>=5.0.4
-#gevent>=21.1.2
+redis>=5.0.4
+gevent>=21.1.2
 
 # === Async HTTP Client ===
 httpx>=0.27.0

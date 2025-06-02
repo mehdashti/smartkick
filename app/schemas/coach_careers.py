@@ -23,6 +23,11 @@ class CoachCareersBase(APIModel):
 
 class CoachCareersCreate(CoachCareersBase):
     coach_id: int
+    team_id: int
+    team_name: Optional[str] = None
+    logo_url: Optional[str] = None
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
 
 class CoachCareersUpdate(APIModel):
     team_id: Optional[int] = None

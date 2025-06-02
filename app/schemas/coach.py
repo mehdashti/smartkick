@@ -37,8 +37,8 @@ class TeamData(APIModel):
 
 class CoachCareers(APIModel):
     team: TeamData
-    start_date: Optional[str] = None
-    end_date: Optional[str] = None
+    start: Optional[str] = None
+    end: Optional[str] = None
 
 class CoachApiResponseItem(APIModel):
     id: int = Field(..., description="Coach ID from external API")

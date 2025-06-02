@@ -10,6 +10,8 @@ if TYPE_CHECKING:
     from app.models.country import Country
     from app.models.player_season_stats import PlayerSeasonStats  
     from app.models.match import Match
+    from app.models.injury import Injury
+
 
 class League(Base):
     __tablename__ = 'leagues'

@@ -1,4 +1,6 @@
 # app/core/celery_app.py
+from gevent import monkey
+monkey.patch_all()
 from celery import Celery
 from .config import settings
 
@@ -16,12 +18,20 @@ celery_app.conf.update(
     timezone=settings.TIMEZONE,
     enable_utc=True,
     task_track_started=True,
-    result_expires=3600,  # مدت زمان نگهداری نتایج (به ثانیه)
-    task_acks_late=True,  # تأیید تسک‌ها پس از اتمام
-    task_reject_on_worker_lost=False,  # جلوگیری از بازپردازش تسک‌های ناتمام
-    broker_connection_retry_on_startup=True,  # تلاش مجدد برای اتصال به بروکر
-    # غیرفعال کردن موقت Beat برای تست
-    beat_schedule={}
+    result_expires=3600,
+    task_acks_late=True,
+    task_reject_on_worker_lost=False, # این تنظیم یعنی اگر worker از دست برود (مثلا kill شود) تسک reject نمی‌شود و بعدا دوباره تلاش می‌شود.
+    broker_connection_retry_on_startup=True,
+
+    # --- تنظیمات مهم Heartbeat ---
+    broker_heartbeat=30,  # ارسال heartbeat به بروکر هر 30 ثانیه
+    # broker_heartbeat_checkrate=2.0, # (اختیاری) ضریبی برای بررسی heartbeat های از دست رفته. پیش‌فرض معمولا کافی است.
+
+    # --- تنظیم مربوط به هشدار لاگ‌ها (اختیاری اما توصیه شده برای آینده) ---
+    # اگر می‌خواهید تسک‌های طولانی در صورت قطع اتصال کنسل شوند تا سریع‌تر redeliver شوند:
+    worker_cancel_long_running_tasks_on_connection_loss=True,
+
+    beat_schedule={} # غیرفعال کردن موقت Beat برای تست
 )
 
 # ثبت تسک‌ها

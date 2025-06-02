@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     CELERY_TASK_TRACK_STARTED: bool = True
     CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP: bool = True
 
+    # --- Redis Settings ---
+    REDIS_HOST: str = "smartkick-redis"
+    REDIS_PORT: int = 6379
+    REDIS_DB: int = 11
+    REDIS_PASSWORD: str = ""
+
     # --- General Settings ---
     TIMEZONE: str = Field(default="UTC", validation_alias='TIMEZONE')
 

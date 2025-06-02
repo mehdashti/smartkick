@@ -16,6 +16,8 @@ if TYPE_CHECKING:
 
     from app.models.match_lineup import MatchLineup
     from app.models.player_fixture_stats import PlayerFixtureStats
+    from app.models.injury import Injury
+
 
 
 class Team(Base):
@@ -91,6 +93,11 @@ class Team(Base):
         cascade="all, delete-orphan",
         foreign_keys="[CoachCareers.team_id]"
     )
+    injuries: Mapped[List["Injury"]] = relationship(
+        back_populates="team",
+        lazy="noload"
+    )
+
 
 
     def __repr__(self) -> str:

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Optional, List, TYPE_CHECKING, Dict, Any
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import String, Integer, Boolean, Date, DateTime, ForeignKey, func, JSON, Index
+from sqlalchemy import String, Integer, Boolean, Date, DateTime, ForeignKey, func, JSON, Index, UniqueConstraint
 from app.core.database import Base
 
 if TYPE_CHECKING:
@@ -24,12 +24,13 @@ class CoachCareers(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
-    # این ویژگی "coach" است که در Coach.careers به آن با back_populates="coach" اشاره می‌شود
     coach: Mapped["Coach"] = relationship(back_populates="careers", lazy="noload")
-
-    # این ویژگی "team" است که در Team.coach_careers به آن با back_populates="team" اشاره می‌شود
     team: Mapped["Team"] = relationship(back_populates="coach_careers", lazy="noload")
 
+    __table_args__ = (
+        UniqueConstraint('coach_id', 'team_id', 'start_date', name='uq_coach_team_start_career'),
+        Index('ix_coach_career_query', 'coach_id', 'team_id')
+    )
 
     def __repr__(self) -> str:
         return f"<carrer_id={self.id}, coach_id(external_id={self.coach_id}, team_id='{self.team_id}'')>"
